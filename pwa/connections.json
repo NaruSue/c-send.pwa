@@ -1,0 +1,21 @@
+{
+  "format": "c-send-connections",
+  "version": 1,
+  "connections": [{
+    "id": "official-portal",
+    "name": "c-sendポータル",
+    "baseUrl": "https://loose.bz/c-send/",
+    "apiBaseUrl": "https://loose.bz/c-send/api/v1/",
+    "color": "#a45c85",
+    "capabilities": {"account": true, "templateSync": true, "backup": true, "news": true},
+    "auth": {"type": "c-send-pkce-v1"},
+    "news": {"url": "https://loose.bz/c-send/api/v1/news?limit=30"},
+    "menu": [
+      {"type": "account", "label": "アカウント"},
+      {"type": "syncSettings", "label": "同期設定", "requiresLogin": true},
+      {"type": "siteLink", "label": "プロフィール設定", "path": "t/profile", "requiresLogin": true},
+      {"type": "siteLink", "label": "テンプレート管理", "path": "t/dashboard", "requiresLogin": true},
+      {"type": "siteLink", "label": "公式サイト", "path": ""}
+    ]
+  }]
+}
