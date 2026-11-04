@@ -4,7 +4,7 @@ c-send の現行PWAソースコードです。
 
 - 配信対象: `pwa/`
 - 現行バージョン: `0.1.84`
-- 配信先: `https://loose.bz/c-send/pwa/`
+- 配信先: `https://narusue.github.io/c-send.pwa/`
 
 このリポジトリは、c-send の静的PWAです。認証API、ポータル、データベースのコードは本リポジトリには含めません。
 

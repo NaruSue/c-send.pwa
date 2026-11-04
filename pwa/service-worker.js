@@ -1,6 +1,7 @@
 importScripts("version.js");
 
 const CACHE_NAME = `csend-web-shell-${self.CSEND_WEB_VERSION}`;
+const PWA_ROOT = "/c-send.pwa/";
 const SHELL = [
   "/c-send/pwa/neko-audio/mugi-hiss.mp3?v=0.1.84",
   "/c-send/pwa/neko-audio/kuro-hiss.mp3?v=0.1.84",
@@ -62,7 +63,7 @@ const SHELL = [
   "/c-send/pwa/connections.json",
   "/c-send/pwa/news.json",
   "/c-send/pwa/version.js"
-];
+].map(path => path.replace(/^\/c-send\/pwa/, PWA_ROOT.slice(0, -1)));
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)));
@@ -81,17 +82,24 @@ self.addEventListener("fetch", event => {
   const request = event.request;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.origin !== self.location.origin || !url.pathname.startsWith("/c-send/pwa/")) return;
+  if (url.origin !== self.location.origin || !url.pathname.startsWith(PWA_ROOT)) return;
   // Version probes and the worker script must always reach the origin.
-  if (url.pathname === "/c-send/pwa/version.js" || url.pathname === "/c-send/pwa/service-worker.js") return;
+  if (url.pathname === `${PWA_ROOT}version.js` || url.pathname === `${PWA_ROOT}service-worker.js`) return;
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then(response => {
       if (response.ok) caches.open(CACHE_NAME).then(async cache => {
         await cache.put(request, response.clone());
-        if(url.pathname==="/c-send/pwa/"||url.pathname==="/c-send/pwa/index.html")await cache.put("/c-send/pwa/", response.clone());
+        if(url.pathname===PWA_ROOT||url.pathname===`${PWA_ROOT}index.html`)await cache.put(PWA_ROOT, response.clone());
       });
       return response;
-    }).catch(async () => (await caches.match(request)) || ((url.pathname==="/c-send/pwa/"||url.pathname==="/c-send/pwa/index.html") ? ((await caches.match("/c-send/pwa/")) || (await caches.match("/c-send/pwa/index.html"))) : Response.error())));
+    }).catch(async () => {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+      if (url.pathname === PWA_ROOT || url.pathname === `${PWA_ROOT}index.html`) {
+        return (await caches.match(PWA_ROOT)) || (await caches.match(`${PWA_ROOT}index.html`)) || Response.error();
+      }
+      return Response.error();
+    }));
     return;
   }
   event.respondWith(fetch(request).then(response => {

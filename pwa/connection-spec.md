@@ -1,6 +1,6 @@
 # c-send 接続先定義・ニュース仕様 v1
 
-公開定義: `https://loose.bz/c-send/pwa/connections.json`
+公開定義: `https://narusue.github.io/c-send.pwa/connections.json`
 
 ## 接続先定義
 

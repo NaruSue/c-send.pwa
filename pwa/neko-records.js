@@ -1,5 +1,5 @@
 const NekoRecords=(()=>{
- const URL='https://loose.bz/c-send/pwa/';
+ const URL='https://narusue.github.io/c-send.pwa/';
  const box=document.createElement('div');box.style.cssText='margin:12px 0;font-size:13px';
  document.getElementById('start').before(box);
  let generation=0;
