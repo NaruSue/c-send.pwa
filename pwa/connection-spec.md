@@ -1,6 +1,6 @@
 # c-send 接続先定義・ニュース仕様 v1
 
-公開定義: `https://narusue.github.io/c-send.pwa/connections.json`
+公式PWA公開定義: `https://narusue.github.io/c-send.pwa/connections.json`（互換URL: `https://loose.bz/c-send/pwa/connections.json`）
 
 ## 接続先定義
 
@@ -27,14 +27,13 @@ JSONは実行コードや認証情報を含めない。未知のメニュー種�
 
 ### 現行クライアントの対応範囲
 
-0.1.66の保存・認証・バックアップ用アダプターは公式ポータル用。
-外部サイトの保存・認証機能はJSONだけで動作するわけではなく、今後対応アダプターと認証仕様の整備が必要。
-現在は第三者サイトに `templateSync: true` を指定すると定義を拒否する。
-Google Driveへの直接接続は未実装。
+0.1.87で利用者によるカスタムAPIサーバ登録に対応。入口URLを指定し、そのサーバで認証して登録する。
+詳細は [カスタムAPIサーバ用API仕様](custom-api-server-spec.md) を参照。CORS・認証・テンプレートAPI・AI向け作成プロンプトを含む。
+同梱connections.jsonの保存・認証・バックアップ用アダプターは引き続き公式用。利用者が追加するカスタム接続は別の端末設定に保存し、公開定義へ認証情報や利用者のURLを書き込まない。
 
 第三者サイトのお知らせと通常のサイトリンクは同じ定義形式で扱える。
-外部サイトのニュースはPWAオリジン `https://loose.bz` からのCORS読み取りを許可すること。
-現在の接続先追加は配信するconnections.jsonの編集で行う。任意URLの登録画面は未実装。
+外部サイトのニュースは正式PWAオリジン `https://narusue.github.io` と、必要なら互換URLのオリジン `https://loose.bz` からのCORS読み取りを許可すること。
+同梱接続先はconnections.json、利用者のカスタムAPI接続は接続先一覧から追加する。
 公式ポータルの特別扱いは同梱定義の固定IDと固定APIの組み合わせでのみ有効。
 
 ## ニュース取得
@@ -92,4 +91,4 @@ ETag/Last-ModifiedとCache-Controlは配信側で設定可能。現行クライ�
 接続先としての有効・無効と、保存済み認証情報の有無は別の状態であり、無効化だけでログアウト・記録削除はしない。
 アカウントと同期設定は、接続先一覧から開いた場合に閉じる操作で同一覧へ戻る。
 詳細は [PWA保守記録](../../docs/pwa-easter-egg.md)。診断は既存の公式アカウント管理者パネルから手動送信する。
-バージョンアップ時の旧診断ログ消去は [次回更新項目](../../docs/pwa-next-update.md) で、現行では未実装。
+バージョンアップ時の旧診断ログ消去は [次回更新項目](../../docs/pwa-next-update.md) に記載し、現行PWAで実装済み。

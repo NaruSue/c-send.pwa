@@ -3,6 +3,7 @@ importScripts("version.js");
 const CACHE_NAME = `csend-web-shell-${self.CSEND_WEB_VERSION}`;
 const PWA_ROOT = "/c-send.pwa/";
 const SHELL = [
+  "/c-send/pwa/custom-api.js?v=0.1.87",
   "/c-send/pwa/neko-audio/mugi-hiss.mp3?v=0.1.84",
   "/c-send/pwa/neko-audio/kuro-hiss.mp3?v=0.1.84",
   "/c-send/pwa/neko-audio/koma-hiss.mp3?v=0.1.84",
