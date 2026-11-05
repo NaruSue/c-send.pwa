@@ -48,7 +48,7 @@
     frame.title = 'ねこパンチ耐久ゲーム';
     frame.allow='web-share';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-    frame.src = 'neko-punch.html?v=0.1.84';
+    frame.src = 'easter-egg/cat-game/neko-punch.html?v=0.1.84';
     window.csendNekoDiagnostic?.('parent_open');
     frame.addEventListener('load',()=>window.csendNekoDiagnostic?.('frame_loaded'));
     frame.style.cssText = 'display:block;width:100%;height:100%;min-height:0;border:0;background:#efece5';
