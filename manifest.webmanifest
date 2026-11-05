@@ -1,0 +1,17 @@
+{
+  "id": "/c-send/pwa/",
+  "name": "c-send",
+  "short_name": "c-send",
+  "description": "定型文やプロンプトを作成・保存して、すぐにコピーできるWebアプリです。",
+  "start_url": "/c-send/pwa/",
+  "scope": "/c-send/pwa/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#fbf8ff",
+  "theme_color": "#7057dc",
+  "icons": [
+    {"src": "icon-192-v0.1.57.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "icon-512-v0.1.57.png", "sizes": "512x512", "type": "image/png", "purpose": "any"}
+  ]
+}
