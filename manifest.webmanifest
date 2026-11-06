@@ -1,10 +1,10 @@
 {
-  "id": "/c-send/pwa/",
+  "id": "./",
   "name": "c-send",
   "short_name": "c-send",
   "description": "定型文やプロンプトを作成・保存して、すぐにコピーできるWebアプリです。",
-  "start_url": "/c-send/pwa/",
-  "scope": "/c-send/pwa/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
   "orientation": "any",
