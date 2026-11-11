@@ -72,11 +72,6 @@ PWAのブラウザーからAPIへ直接接続します。**サーバ側のCORS�
 
 許可するオリジンは、PWAを実際に配信するオリジンです。PWAは固定の公式URLを戻り先にせず、現在の配信URL（`location.origin` と `location.pathname`）をOAuthの戻り先URIとして使います。自前ドメインやフォーク版を使う場合も、同じ規則でその配信先を登録してください。
 
-| PWAの配信先 | CORSで許可するオリジン | OAuthで許可する戻り先URI |
-| --- | --- | --- |
-| 例：`https://pwa.example/` | `https://pwa.example` | `https://pwa.example/` |
-| 例：`https://example.com/tools/c-send/` | `https://example.com` | `https://example.com/tools/c-send/` |
-
 オリジンにパスは含めません。認証時は別途、**PWAが送った戻り先URI全体を完全一致**で照合します。PWAを自前で配信する場合も、実際の配信先に合わせて登録してください。
 
 許可したOriginからの応答例：
