@@ -173,7 +173,7 @@
   <script>
   (()=>{
     "use strict";
-    const DB_NAME="csend-web-local",DB_VERSION=3,STORE="items",SOURCE_STORE="sources",AUTH_STORE="auth",AUTH_KEY="https://loose.bz",DIAGNOSTICS_KEY="csend-admin-diagnostics",DIAGNOSTICS_VERSION_KEY="csend-admin-diagnostics-version",API_BASE="https://loose.bz/c-send/api/v1",LEGACY_PWA_REDIRECT_URI="https://loose.bz/c-send/pwa/",PAGES_PWA_URL="https://narusue.github.io/c-send.pwa/",PWA_REDIRECT_URI=location.origin==="https://narusue.github.io"?PAGES_PWA_URL:LEGACY_PWA_REDIRECT_URI,VERSION_URL=new URL("version.js",document.baseURI).href,SAMPLE_URL="https://loose.bz/c-send/t/selection.json?ds=sample";
+    const DB_NAME="csend-web-local",DB_VERSION=3,STORE="items",SOURCE_STORE="sources",AUTH_STORE="auth",AUTH_KEY="https://loose.bz",DIAGNOSTICS_KEY="csend-admin-diagnostics",DIAGNOSTICS_VERSION_KEY="csend-admin-diagnostics-version",API_BASE="https://loose.bz/c-send/api/v1",PWA_REDIRECT_URI=new URL(location.pathname,location.origin).href,VERSION_URL=new URL("version.js",document.baseURI).href,SAMPLE_URL="https://loose.bz/c-send/t/selection.json?ds=sample";
     const TAG_SEARCH_HISTORY_KEY="csend-web-tag-search-history",SAMPLE_USAGE_KEY="csend-web-sample-last-used",REFERENCE_USAGE_KEY="csend-web-reference-last-used",HIDDEN_SITE_TEMPLATES_KEY="csend-web-hidden-site-templates",NEWS_READ_IDS_KEY="csend-web-news-read-ids",COMMON_JSON_METADATA_KEY="csend-common-json-metadata";
     const state={items:[],sampleItems:[],referenceItems:[],references:[],query:"",tags:[],tagSearchHistory:[],editingId:null,sampleSyncedAt:null,referencesSyncedAt:null,sampleDetailsOpen:false,syncingReferences:false,newsReleases:null,newsHasUnread:false,updateAvailable:false};
     const templateClipboardCache=new Map(),copyingItems=new Set();

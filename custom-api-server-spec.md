@@ -70,19 +70,19 @@ PWAは入口から実行コードや認証情報を受け取りません。接�
 
 PWAのブラウザーからAPIへ直接接続します。**サーバ側のCORS対応が必要**です。PWAでCORS制限を解除することはできず、`no-cors` ではJSONを読み取れません。
 
-許可するオリジンは運営者が設定します。
+許可するオリジンは、PWAを実際に配信するオリジンです。PWAは固定の公式URLを戻り先にせず、現在の配信URL（`location.origin` と `location.pathname`）をOAuthの戻り先URIとして使います。自前ドメインやフォーク版を使う場合も、同じ規則でその配信先を登録してください。
 
-| 用途 | 許可オリジン | 許可する戻り先URI |
+| PWAの配信先 | CORSで許可するオリジン | OAuthで許可する戻り先URI |
 | --- | --- | --- |
-| 正式PWA | `https://narusue.github.io` | `https://narusue.github.io/c-send.pwa/` |
-| 互換URL | `https://loose.bz` | `https://loose.bz/c-send/pwa/` |
+| 例：`https://pwa.example/` | `https://pwa.example` | `https://pwa.example/` |
+| 例：`https://example.com/tools/c-send/` | `https://example.com` | `https://example.com/tools/c-send/` |
 
-オリジンにパスは含めません。GitHub Pagesのオリジン許可は同じホスト内の他のパスも含むため、認証時は別途、**戻り先URI全体を完全一致**で照合します。PWAを自前で配信する場合も、そのオリジンと戻り先URIを運営者が明示登録します。
+オリジンにパスは含めません。認証時は別途、**PWAが送った戻り先URI全体を完全一致**で照合します。PWAを自前で配信する場合も、実際の配信先に合わせて登録してください。
 
 許可したOriginからの応答例：
 
 ```http
-Access-Control-Allow-Origin: https://narusue.github.io
+Access-Control-Allow-Origin: https://pwa.example
 Vary: Origin
 Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS
 Access-Control-Allow-Headers: Authorization, Content-Type
@@ -113,7 +113,7 @@ PWAは `auth.authorizationUrl` へ次のクエリを付けて画面遷移しま�
 ?state=<ランダム値>
 &code_challenge=<BASE64URL(SHA256(code_verifier))>
 &code_challenge_method=S256
-&redirect_uri=https%3A%2F%2Fnarusue.github.io%2Fc-send.pwa%2F
+&redirect_uri=https%3A%2F%2Fpwa.example%2F
 ```
 
 サーバは戻り先URIの許可リスト、チャレンジ、stateを検証し、ログイン取引として保存します。ユーザーはそのサーバの画面で認証します。既存セッションを利用しても構いません。
@@ -123,7 +123,7 @@ PWAは `auth.authorizationUrl` へ次のクエリを付けて画面遷移しま�
 認証に成功したら、有効期間の短い一度だけ使える認可コードを発行します。戻り先URI、PKCEチャレンジ、認証ユーザーに結び付けます。コードの有効期間は60秒程度を推奨します。
 
 ```text
-https://narusue.github.io/c-send.pwa/#code=<認可コード>&state=<元のstate>
+https://pwa.example/#code=<認可コード>&state=<元のstate>
 ```
 
 クエリではなくフラグメントで返します。失敗・キャンセル時は `#error=access_denied&state=...` を返せます。PWAはstateの一致を確認し、認証開始から10分を超えた取引は拒否します。
@@ -137,7 +137,7 @@ https://narusue.github.io/c-send.pwa/#code=<認可コード>&state=<元のstate>
   "grant_type": "authorization_code",
   "code": "一度だけ使える認可コード",
   "code_verifier": "PWAが生成した検証値",
-  "redirect_uri": "https://narusue.github.io/c-send.pwa/"
+  "redirect_uri": "https://pwa.example/"
 }
 ```
 
@@ -339,7 +339,7 @@ c-send PWAに接続できるカスタムAPIサーバを実装してください�
    削除記録を保持し、削除済みデータを古いPUTで復活させない。
    同期の全体許可と項目別許可を管理し、作成データは非公開にする。
 5. HTTPSとCORSを設定する。
-   許可オリジンは https://narusue.github.io と、必要なら https://loose.bz。
+   PWAを配信するオリジンをCORSの許可リストに登録する。複数の配信先を使う場合だけ、運営者が管理する複数のオリジンを登録する。
    OPTIONSは認証不要。Authorization、Content-Type、利用するHTTPメソッドを許可。
    入口・トークン・データ・エラー応答に必要なCORSヘッダーを付ける。
    APIはCookieに依存せずBearer認証とし、個人データはno-store。
