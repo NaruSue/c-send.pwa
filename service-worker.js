@@ -66,9 +66,23 @@ const SHELL = [
   "./version.js"
 ].map(path => new URL(path, self.registration.scope).href);
 
+async function manualUpdateMode() {
+  const cache = await caches.open("csend-update-settings");
+  const response = await cache.match(new URL("__update_mode__", self.registration.scope).href);
+  return response && (await response.text()) === "manual";
+}
+
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)));
-  self.skipWaiting();
+  event.waitUntil((async () => {
+    const settings = await caches.open("csend-update-settings");
+    const permitUrl = new URL("__update_permit__", self.registration.scope).href;
+    const permit = await settings.match(permitUrl);
+    const explicit = permit && Date.now() - Number(await permit.text()) < 60000;
+    await settings.delete(permitUrl);
+    if (!explicit && await manualUpdateMode()) throw new Error("Manual update mode");
+    await caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL));
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate", event => {
@@ -85,15 +99,22 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || !url.pathname.startsWith(BASE_PATH)) return;
   // Version probes and the worker script must always reach the origin.
-  if (url.pathname === BASE_PATH + "version.js" || url.pathname === BASE_PATH + "service-worker.js") return;
+  if (url.pathname === BASE_PATH + "service-worker.js" || (url.pathname === BASE_PATH + "version.js" && url.searchParams.has("check"))) return;
+  if (url.pathname === BASE_PATH + "version.js") {
+    event.respondWith((async () => (await manualUpdateMode()) ? ((await (await caches.open(CACHE_NAME)).match(BASE_PATH + "version.js")) || fetch(request)) : fetch(request))());
+    return;
+  }
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).then(response => {
+    event.respondWith((async () => {
+      if (await manualUpdateMode()) { const cached = await (await caches.open(CACHE_NAME)).match(BASE_PATH); if (cached) return cached; }
+      return fetch(request).then(response => {
       if (response.ok) caches.open(CACHE_NAME).then(async cache => {
         await cache.put(request, response.clone());
         if(url.pathname===BASE_PATH||url.pathname===BASE_PATH+"index.html")await cache.put(BASE_PATH, response.clone());
       });
       return response;
-    }).catch(async () => (await caches.match(request)) || ((url.pathname===BASE_PATH||url.pathname===BASE_PATH+"index.html") ? ((await caches.match(BASE_PATH)) || (await caches.match(BASE_PATH+"index.html"))) : Response.error())));
+    }).catch(async () => (await caches.match(request)) || ((url.pathname===BASE_PATH||url.pathname===BASE_PATH+"index.html") ? ((await caches.match(BASE_PATH)) || (await caches.match(BASE_PATH+"index.html"))) : Response.error()));
+    })());
     return;
   }
   event.respondWith(fetch(request).then(response => {
