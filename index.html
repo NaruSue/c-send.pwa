@@ -424,20 +424,22 @@
       await writeAll(state.items);render();notify(mode==="device"?"この端末から削除しました":"同期を解除し、この端末に残しました");return true;
     };
     syncServerTemplates=async function(silent=true,connectionId="official-portal"){
-      const connection=connectionDefinitions.find(c=>c.id===connectionId);if(!connectionEnabled(connection)||!connection.capabilities.templateSync)return;
+      const connection=connectionDefinitions.find(c=>c.id===connectionId),historyChannel=connectionId==="official-portal"?"portal":connectionId;
+      const noteSyncState=(message,error=false)=>{recordDiagnostic(error?"sync_failed":"sync_state",{message});recordSyncHistory(message,error,historyChannel).catch(()=>historyStorageError=true)};
+      if(!connectionEnabled(connection)||!connection?.capabilities.templateSync){noteSyncState("同期を開始しませんでした：接続先が無効、または同期に未対応です");return}
       const readAuth=()=>readConnectionAuth(connectionId),writeAuth=auth=>writeConnectionAuth(connectionId,auth),apiFetch=(path,options)=>requestConnection(connection,path,options);
       const readHiddenSiteTemplateIds=()=>readConnectionHidden(connectionId,auth.userId),matchesConnection=i=>(i.connectionId||"official-portal")===connectionId;
       const readDeleteQueue=()=>readScopedDeleteQueue(connectionId),writeDeleteQueue=q=>writeScopedDeleteQueue(connectionId,q);
       const remoteId=(id,owner)=>connectionId==="official-portal"?"site:"+id:"site:"+connectionId+":"+owner+":"+id;
-      if(serverSyncPromise)return serverSyncPromise;if(!navigator.onLine)return;
-      const auth=await readAuth();if(!auth){syncFooterStatuses.delete((connectionId==="official-portal"?"portal":connectionId));renderSyncFooter();return;}
+      if(serverSyncPromise){noteSyncState("同期を開始しませんでした：別の同期処理が実行中です");return serverSyncPromise}if(!navigator.onLine){noteSyncState("同期を開始しませんでした：端末がオフラインです");return}
+      const auth=await readAuth();if(!auth){noteSyncState("同期を開始しませんでした：この接続先にログインしていません");syncFooterStatuses.delete(historyChannel);renderSyncFooter();return;}
       const syncContent=i=>JSON.stringify([i.name,i.value,i.mode||'plain',i.tags||[]]);
       const footerBeforeSync=new Map(state.items.filter(i=>i.siteId&&matchesConnection(i)).map(i=>[i.siteId,syncContent(i)])),footerUploaded=new Set();
       serverSyncPromise=(async()=>{try{
         const profile=await apiFetch("/auth/me");if(profile.id!==auth.userId&&auth.userId)throw new Error("アカウントが変更されました。");
-        const latestAuth=await readAuth();if(!latestAuth)return;latestAuth.userId=profile.id;latestAuth.pwaAutoSyncEnabled=profile.pwa_auto_sync_enabled===true;await writeAuth(latestAuth);
-        if(connectionId==="official-portal")$("autoSyncEnabled").checked=latestAuth.pwaAutoSyncEnabled;if(!latestAuth.pwaAutoSyncEnabled){syncFooterStatuses.delete((connectionId==="official-portal"?"portal":connectionId));renderSyncFooter();return;}
-        if(connection.custom&&!customUploadApproved(connection,profile.id)){setSyncFooter('送信先の確認が必要です。接続先の「アカウント・同期設定」で送信を許可してください。',true,connectionId);return}
+        const latestAuth=await readAuth();if(!latestAuth){noteSyncState("同期を開始しませんでした：同期中にログイン情報が消えました",true);return}latestAuth.userId=profile.id;latestAuth.pwaAutoSyncEnabled=profile.pwa_auto_sync_enabled===true;await writeAuth(latestAuth);
+        if(connectionId==="official-portal")$("autoSyncEnabled").checked=latestAuth.pwaAutoSyncEnabled;if(!latestAuth.pwaAutoSyncEnabled){noteSyncState("同期を開始しませんでした：アカウントの自動同期が許可されていません");syncFooterStatuses.delete(historyChannel);renderSyncFooter();return;}
+        if(connection.custom&&!customUploadApproved(connection,profile.id)){noteSyncState('同期を開始しませんでした：この端末からの送信許可がありません',true);setSyncFooter('送信先の確認が必要です。接続先の「アカウント・同期設定」で送信を許可してください。',true,connectionId);return}
         let queue=readDeleteQueue();for(const entry of queue.filter(x=>x.userId===profile.id)){await apiFetch("/templates/"+encodeURIComponent(entry.id),{method:"DELETE"});queue=queue.filter(x=>!(x.id===entry.id&&x.userId===entry.userId));writeDeleteQueue(queue);state.items=state.items.filter(x=>!(matchesConnection(x)&&x.siteId===entry.id&&x.syncOwnerId===profile.id));await writeAll(state.items)}
         for(const snapshot of [...state.items].filter(x=>matchesConnection(x)&&x.syncEnabled&&x.syncPending&&!x.deletePending)){
           if(snapshot.syncOwnerId&&snapshot.syncOwnerId!==profile.id)continue;
@@ -465,8 +467,8 @@
         await writeAll(state.items);render();const afterSync=new Map(state.items.filter(i=>i.siteId&&matchesConnection(i)).map(i=>[i.siteId,syncContent(i)]));let added=0,updated=0,removed=0;
         for(const [id,content] of afterSync){if(!footerBeforeSync.has(id))added++;else if(footerBeforeSync.get(id)!==content||footerUploaded.has(id))updated++}
         for(const id of footerBeforeSync.keys())if(!afterSync.has(id))removed++;
-        if(added||updated||removed)setSyncFooter('同期しました（追加'+added+'件・更新'+updated+'件・削除'+removed+'件） · '+new Date().toLocaleString('ja-JP'),false,(connectionId==="official-portal"?"portal":connectionId));else{syncFooterStatuses.delete((connectionId==="official-portal"?"portal":connectionId));renderSyncFooter()};
-      }catch(error){setSyncFooter("同期を保留しています · "+error.message,true,(connectionId==="official-portal"?"portal":connectionId))}finally{serverSyncPromise=null}})();return serverSyncPromise;
+        const summary='同期を完了しました（追加'+added+'件・更新'+updated+'件・削除'+removed+'件）';noteSyncState(summary);if(added||updated||removed)setSyncFooter(summary+' · '+new Date().toLocaleString('ja-JP'),false,historyChannel);else{syncFooterStatuses.delete(historyChannel);renderSyncFooter()};
+      }catch(error){noteSyncState("同期に失敗しました："+(error.message||"原因不明"),true);setSyncFooter("同期を保留しています · "+error.message,true,historyChannel)}finally{serverSyncPromise=null}})();return serverSyncPromise;
     };
     // Connection definitions contain presentation/protocol metadata, never credentials.
     const CONNECTION_KEY='csend-connections-v1', FILTER_KEY='csend-filters-v1';
