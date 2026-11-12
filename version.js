@@ -1,1 +1,1 @@
-self.CSEND_WEB_VERSION = "0.1.97";
+self.CSEND_WEB_VERSION = "0.1.98";
