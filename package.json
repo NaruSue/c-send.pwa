@@ -1,19 +1,12 @@
 {
   "name": "c-send-pwa",
-  "version": "1.0.0",
-  "description": "よく使う文章を登録し、必要なときにコピーできるPWAです。テンプレートは端末に保存でき、接続先を選んでアカウントと同期することもできます。",
-  "main": "custom-api.js",
-  "directories": {
-    "test": "tests"
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "test": "node scripts/test.cjs"
   },
   "devDependencies": {
     "playwright": "1.65.0"
-  },
-  "scripts": {
-    "test": "node tests/hidden-sync-items.check.cjs"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "private": "true"
+  }
 }

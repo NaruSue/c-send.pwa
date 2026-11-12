@@ -1,0 +1,3 @@
+const fs=require('node:fs'),path=require('node:path'),{spawnSync}=require('node:child_process');
+const root=path.resolve(__dirname,'..');const files=fs.readdirSync(path.join(root,'tests')).filter(name=>name.endsWith('.test.cjs')||name.endsWith('.check.cjs')).sort();if(!files.length)throw Error('No tests found');
+for(const file of files){console.log('\n--- '+file+' ---');const result=spawnSync(process.execPath,[path.join('tests',file)],{cwd:root,stdio:'inherit',timeout:180000});if(result.error||result.status!==0){console.error('FAILED: '+file,result.error||`exit ${result.status}`);process.exit(1)}}console.log(`\n${files.length} PWA test files passed`);

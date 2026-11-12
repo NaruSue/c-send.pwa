@@ -1,0 +1,18 @@
+const fs=require('fs'),assert=require('assert');const {chromium}=require('playwright');
+(async()=>{const b=await chromium.launch({headless:true});try{const p=await b.newPage();await p.route('https://loose.bz/c-send/pwa/**',r=>{const f=new URL(r.request().url()).pathname.slice('/c-send/pwa/'.length);r.fulfill({contentType:f.endsWith('.html')?'text/html':f.endsWith('.js')?'application/javascript':'audio/mpeg',body:fs.readFileSync('./'+f)})});await p.goto('https://loose.bz/c-send/pwa/easter-egg/cat-game/neko-punch.html');
+
+await p.evaluate(()=>{window.csendNekoUserId=async()=>'unlock-user'});
+const set=async(records)=>p.evaluate(async records=>{localStorage.setItem('csend-neko-best-v1:unlock-user',JSON.stringify(records));return await NekoUnlocks.refresh()},records);
+const records=Object.fromEntries(['mugi','kuro','koma','yuki'].map(id=>[id,{ms:299999}]));assert.equal((await set(records)).boss,false);
+for(const id of Object.keys(records))records[id].ms=300000;assert.equal((await set(records)).boss,true);
+await p.evaluate(()=>choose('boss'));assert.equal(await p.evaluate(()=>cat.id),'boss');assert.ok(await p.locator('svg.cat').evaluate(el=>el.getBoundingClientRect().width)>300);
+for(const id of Object.keys(records))records[id].ms=600000;records.boss={ms:599999};assert.equal((await set(records)).twins,false);records.boss.ms=600000;assert.equal((await set(records)).twins,true);
+await p.evaluate(()=>{choose('twins');mode='playing';elapsed=0;waveAttack()});assert.equal(await p.locator('svg.cat').count(),2);assert.equal(await p.evaluate(()=>pending.length),4);assert.equal(await p.evaluate(()=>new Set(pending.map(a=>a.at)).size),4);
+await p.evaluate(()=>{clear();elapsed=240000;waveAttack()});assert.equal(await p.evaluate(()=>new Set(pending.map(a=>a.at)).size),1);await p.evaluate(()=>{const list=pending.splice(0);list.forEach(a=>punch(a.side))});assert.equal(await p.locator('.target').count(),4);
+await p.screenshot({path:require('node:path').join(require('node:os').tmpdir(),'csend-neko-twins.png'),fullPage:true});
+records.twins={ms:599999};assert.equal((await set(records)).ending,false);records.twins.ms=600000;assert.equal((await set(records)).ending,true);
+await p.evaluate(()=>{clear();mode='over';NekoUnlocks.playing(false)});await p.getByRole('button',{name:'おめでとうソング ♪',exact:true}).click();await p.waitForFunction(()=>NekoAudio.celebrating());await p.setViewportSize({width:375,height:667});await p.waitForFunction(()=>document.querySelectorAll('#nekoChoir svg').length===7);assert.equal(await p.locator('#nekoChoir svg').count(),7);assert.ok(await p.locator('#nekoChoir').evaluate(el=>{const r=el.getBoundingClientRect();return [...el.children].every(child=>{const b=child.getBoundingClientRect();return b.top>=r.top-2&&b.bottom<=r.bottom+2})}));await p.screenshot({path:require('node:path').join(require('node:os').tmpdir(),'csend-neko-choir.png'),fullPage:true});await p.getByRole('button',{name:'お祝いを止める'}).click();assert.equal(await p.locator('#nekoChoir').count(),0);
+await p.evaluate(()=>{window.csendNekoUserId=async()=>'another-user'});assert.equal((await p.evaluate(()=>NekoUnlocks.refresh())).boss,false);assert.equal(await p.evaluate(()=>NekoUnlocks.available().length),4);
+await p.evaluate(()=>{NekoAudio.select('boss')});await p.locator('#sound').click();await p.locator('#sound').click();await p.evaluate(()=>NekoAudio.ready());
+console.log('PASS: exact 5/10-minute unlock boundaries, large boss, twin four paws and stagger/simultaneous attacks, seven-cat choir, per-account separation, boss audio decode');
+}finally{await b.close()}})().catch(e=>{console.error(e);process.exit(1)});

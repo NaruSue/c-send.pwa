@@ -16,24 +16,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install test dependencies
-        run: npm ci
-
-      - name: Install browser
-        run: npx playwright install --with-deps chromium
-
-      - name: Run PWA tests
-        run: npm test
+    uses: ./.github/workflows/ci.yml
 
   deploy:
     needs: test
@@ -48,18 +31,18 @@ jobs:
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
-      - name: Verify Pages artifact
-        shell: bash
-        run: |
-          set -eu
-          test -s ./index.html
-          test -s ./manifest.webmanifest
-          test -s ./service-worker.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build Pages artifact
+        run: npm run build
 
       - name: Upload PWA artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./
+          path: ./dist
 
       - name: Deploy to Pages
         id: deployment
