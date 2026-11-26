@@ -10,7 +10,7 @@
     "playwright": "1.65.0"
   },
   "scripts": {
-    "test": "node tests/hidden-sync-items.check.cjs"
+    "test": "node tests/desktop-bridge.test.cjs && node tests/hidden-sync-items.check.cjs"
   },
   "keywords": [],
   "author": "",

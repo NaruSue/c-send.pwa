@@ -3,6 +3,8 @@
 よく使う文章を登録し、必要なときにコピーできるPWAです。テンプレートは端末に保存でき、接続先を選んでアカウントと同期することもできます。
 
 - [正式PWAを開く](https://narusue.github.io/c-send.pwa/)
+- [デスクトップラッパー要件](wrap/README.md)：Tauri 2で作るWindows・macOS・Linux向けアプリ。トレイ、ローカル設定、OS別リリースの方針
+- [デスクトップラッパー連携API](wrap/api-contract.md)：PWAからのリスト送信、テンプレート展開コールバック、利用履歴通知の契約
 - [カスタムAPIサーバ用API仕様](custom-api-server-spec.md)：自分や組織のサーバを接続先として使うメリット、入口API、認証、CORS、保存・同期API、AI向けサーバ作成プロンプト
 - [接続先定義・お知らせ仕様](connection-spec.md)
 

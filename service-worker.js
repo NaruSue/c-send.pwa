@@ -4,6 +4,7 @@ const BASE_PATH = new URL(self.registration.scope).pathname;
 const CACHE_NAME = `csend-web-shell-${self.CSEND_WEB_VERSION}`;
 const SHELL = [
   "./custom-api.js?v=0.1.87",
+  "./desktop-bridge.js?v=0.2.1",
   "./easter-egg/cat-game/neko-audio/mugi-hiss.mp3?v=0.1.84",
   "./easter-egg/cat-game/neko-audio/kuro-hiss.mp3?v=0.1.84",
   "./easter-egg/cat-game/neko-audio/koma-hiss.mp3?v=0.1.84",

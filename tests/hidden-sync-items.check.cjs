@@ -6,6 +6,7 @@ const root = path.resolve(__dirname, '..');
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
 const version = fs.readFileSync(path.join(root, 'version.js'), 'utf8');
 const api = fs.readFileSync(path.join(root, 'custom-api.js'), 'utf8');
+const desktopBridge = fs.readFileSync(path.join(root, 'desktop-bridge.js'), 'utf8');
 const connections = JSON.parse(fs.readFileSync(path.join(root, 'connections.json'), 'utf8'));
 const news = JSON.parse(fs.readFileSync(path.join(root, 'news.json'), 'utf8'));
 (async () => {
@@ -15,9 +16,17 @@ const news = JSON.parse(fs.readFileSync(path.join(root, 'news.json'), 'utf8'));
     const page = await context.newPage();
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
+    await page.addInitScript(() => {
+      window.__desktopCalls = [];
+      window.__desktopListeners = {};
+      window.__TAURI__ = {
+        core: { invoke: async (command, args) => { window.__desktopCalls.push({ command, args }); if (command === 'desktop_get_info') return { wrapperVersion: '0.0.1', apiVersion: 1, os: 'windows', capabilities: [] }; } },
+        event: { listen: async (name, callback) => { window.__desktopListeners[name] = callback; return () => delete window.__desktopListeners[name]; } }
+      };
+    });
     const templates = [
       { id: 'hidden-1', revision: 3, updated_at: new Date().toISOString(), pwa_sync_enabled: true, document: { format: 'c-send-pwa-backup', version: 1, items: [{ id: 'hidden-1', name: '非表示の検証項目', value: '本文', tags: ['仕事'], mode: 'plain' }] } },
-      { id: 'visible-1', revision: 2, updated_at: new Date().toISOString(), pwa_sync_enabled: true, document: { format: 'c-send-pwa-backup', version: 1, items: [{ id: 'visible-1', name: '表示中の検証項目', value: '本文', tags: ['仕事'], mode: 'plain' }] } },
+      { id: 'visible-1', revision: 2, updated_at: new Date().toISOString(), pwa_sync_enabled: true, document: { format: 'c-send-pwa-backup', version: 1, items: [{ id: 'visible-1', name: '表示中の検証項目', value: '本文: {{clipboard}}', tags: ['仕事'], mode: 'template' }] } },
       { id: 'disabled-1', revision: 1, updated_at: new Date().toISOString(), pwa_sync_enabled: false, document: { format: 'c-send-pwa-backup', version: 1, items: [{ id: 'disabled-1', name: '同期無効項目', value: '本文', tags: [], mode: 'plain' }] } }
     ];
     let writes = 0;
@@ -26,6 +35,7 @@ const news = JSON.parse(fs.readFileSync(path.join(root, 'news.json'), 'utf8'));
       if (url.pathname === '/c-send/pwa/' || url.pathname.endsWith('/index.html')) return route.fulfill({ contentType: 'text/html', body: html });
       if (url.pathname.endsWith('/version.js')) return route.fulfill({ contentType: 'application/javascript', body: version });
       if (url.pathname.endsWith('/custom-api.js')) return route.fulfill({ contentType: 'application/javascript', body: api });
+      if (url.pathname.endsWith('/desktop-bridge.js')) return route.fulfill({ contentType: 'application/javascript', body: desktopBridge });
       if (url.pathname.endsWith('/connections.json')) return json(connections);
       if (url.pathname.endsWith('/news.json')) return json(news);
       if (url.pathname.endsWith('/selection.json') || url.pathname.endsWith('/news')) return json({ format: 'c-send-pwa-backup', version: 1, items: [], releases: [] });
@@ -42,6 +52,21 @@ const news = JSON.parse(fs.readFileSync(path.join(root, 'news.json'), 'utf8'));
       localStorage.setItem('csend-web-hidden-site-templates', JSON.stringify(['hidden-1']));
     });
     await page.reload();
+    await page.waitForFunction(() => window.__desktopCalls.some(call => call.command === 'desktop_publish_quick_list' && call.args.snapshot.items.some(item => item.id === 'site:visible-1')));
+    const expanded = await page.evaluate(async () => {
+      await window.__desktopListeners['c-send-template-resolve']({ payload: { requestId: 'resolve-visible-1', itemId: 'site:visible-1', context: { clipboardText: 'tray clipboard' } } });
+      return window.__desktopCalls.find(call => call.command === 'desktop_respond_template' && call.args.requestId === 'resolve-visible-1')?.args;
+    });
+    assert.equal(expanded.payload.text, '本文: tray clipboard');
+    await page.evaluate(async () => {
+      await window.__desktopListeners['c-send-item-used']({ payload: { itemId: 'site:visible-1', usedAt: '2026-11-27T01:02:03.000Z' } });
+    });
+    const usedItem = await page.evaluate(async () => {
+      const db = await new Promise(resolve => { const r = indexedDB.open('csend-web-local', 3); r.onsuccess = () => resolve(r.result); });
+      return await new Promise((resolve, reject) => { const r = db.transaction('items').objectStore('items').get('site:visible-1'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+    });
+    assert.equal(usedItem.usageCount, 1);
+    assert.equal(usedItem.lastUsedAt, '2026-11-27T01:02:03.000Z');
     await page.locator('#settingsButton').click();
     await page.locator('#menuAccount').click();
     await page.locator('#connectionsBody [data-account-entry="syncSettings"]').click();
