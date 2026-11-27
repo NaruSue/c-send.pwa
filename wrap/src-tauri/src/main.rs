@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, fs, path::PathBuf, sync::{Arc, Mutex}, time::Duration};
+use std::{collections::HashMap, fs, path::PathBuf, sync::{Arc, Mutex, atomic::{AtomicU64, Ordering}}, time::{Duration, Instant}};
 use tauri::{Emitter, Manager, State, Webview, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
@@ -17,7 +17,7 @@ struct Item { id: String, title: String, value: String, mode: String, #[serde(de
 #[derive(Clone, Deserialize, Serialize, Default)]
 struct Snapshot { #[serde(default)] api_version: u32, #[serde(default)] items: Vec<Item> }
 #[derive(Default)]
-struct AppState { snapshot: Mutex<Snapshot>, pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Result<String,String>>>> }
+struct AppState { snapshot: Mutex<Snapshot>, generation: AtomicU64, clicks: AtomicU64, last_click: Mutex<Option<Instant>>, last_double_click: Mutex<Option<Instant>>, pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Result<String,String>>>> }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +27,6 @@ fn require_main(webview: &Webview) -> Result<(),String> {
     let url=webview.url().map_err(|e|e.to_string())?;
     if webview.label()=="main" && url.scheme()=="https" && url.host_str()==Some("narusue.github.io") && url.path().starts_with("/c-send.pwa") { Ok(()) } else { Err("command unavailable in this webview".into()) }
 }
-fn require_quick(webview: &Webview) -> Result<(),String> { if webview.label()=="quick" { Ok(()) } else { Err("command unavailable in this webview".into()) } }
 
 #[tauri::command]
 fn desktop_get_info(webview: Webview) -> Result<WrapperInfo,String> {
@@ -41,8 +40,11 @@ fn desktop_publish_quick_list(snapshot: Snapshot, state: State<'_, Arc<AppState>
     require_main(&webview)?;
     if snapshot.api_version != 1 { return Err("unsupported API version".into()); }
     let clean = Snapshot { api_version: 1, items: snapshot.items.into_iter().take(20).collect() };
-    *state.snapshot.lock().map_err(|e|e.to_string())? = clean.clone();
-    if let Some(window) = app.get_webview_window("quick") { let _ = window.emit("quick-list-updated", &clean); }
+    { let mut current = state.snapshot.lock().map_err(|e|e.to_string())?; *current = clean; state.generation.fetch_add(1, Ordering::SeqCst); }
+    #[cfg(target_os="linux")]
+    if let Some(tray) = app.tray_by_id("main-tray") { if let Ok(menu) = make_tray_menu(&app, true) { let _ = tray.set_menu(Some(menu)); } }
+    #[cfg(not(target_os="linux"))]
+    let _ = app;
     Ok(())
 }
 #[tauri::command]
@@ -53,10 +55,8 @@ fn desktop_respond_template(request_id: String, item_id: String, payload: Option
     let _ = item_id;
     let _ = tx.send(result); Ok(())
 }
-#[tauri::command]
-async fn desktop_select_item(item_id: String, app: tauri::AppHandle, state: State<'_, Arc<AppState>>, webview: Webview) -> Result<(),String> {
-    require_quick(&webview)?;
-    let item = state.snapshot.lock().map_err(|e|e.to_string())?.items.iter().find(|x|x.id == item_id).cloned().ok_or("item is no longer available")?;
+async fn select_item(item: Item, generation: u64, app: tauri::AppHandle) -> Result<(),String> {
+    let state = app.state::<Arc<AppState>>();
     let text = if item.mode == "template" {
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx,rx) = tokio::sync::oneshot::channel();
@@ -66,15 +66,13 @@ async fn desktop_select_item(item_id: String, app: tauri::AppHandle, state: Stat
         app.emit("c-send-template-resolve", serde_json::json!({"requestId":request_id,"itemId":item.id,"context":context})).map_err(|e|e.to_string())?;
         match tokio::time::timeout(Duration::from_secs(30), rx).await { Ok(Ok(Ok(s)))=>s, _=>{state.pending.lock().ok().map(|mut p|p.remove(&request_id));return Err("template expansion failed".into())} }
     } else { item.value.clone() };
+    if state.generation.load(Ordering::SeqCst) != generation { return Err("item is no longer available".into()); }
     app.clipboard().write_text(text).map_err(|e|e.to_string())?;
     let used_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let _ = app.emit("c-send-item-used", serde_json::json!({"itemId":item.id,"usedAt":used_at}));
     let _ = app.emit("c-send-log", serde_json::json!({"level":"info","event":"quick_select_copy_succeeded","at":used_at}));
-    if let Some(window) = app.get_webview_window("quick") { let _ = window.hide(); }
     Ok(())
 }
-#[tauri::command]
-fn desktop_get_quick_list(state: State<'_, Arc<AppState>>, webview: Webview) -> Result<Snapshot,String> { require_quick(&webview)?; Ok(state.snapshot.lock().map(|s|s.clone()).unwrap_or_default()) }
 #[tauri::command]
 fn desktop_set_always_on_top(enabled: bool, app: tauri::AppHandle, webview: Webview) -> Result<(),String> {
     require_main(&webview)?;
@@ -88,16 +86,33 @@ fn apply_always_on_top(enabled: bool, app: &tauri::AppHandle) -> Result<(),Strin
 }
 fn settings_path(app: &tauri::AppHandle) -> Result<PathBuf,String> { Ok(app.path().app_config_dir().map_err(|e|e.to_string())?.join("settings.json")) }
 fn saved_always_on_top(app: &tauri::AppHandle) -> bool { settings_path(app).ok().and_then(|p|fs::read_to_string(p).ok()).and_then(|s|serde_json::from_str::<serde_json::Value>(&s).ok()).and_then(|v|v.get("alwaysOnTop").and_then(|b|b.as_bool())).unwrap_or(false) }
-#[tauri::command]
-fn desktop_show_main(app: tauri::AppHandle, webview: Webview) -> Result<(),String> { require_quick(&webview)?; show_main(&app) }
 fn show_main(app: &tauri::AppHandle) -> Result<(),String> { let w=app.get_webview_window("main").ok_or("main window missing")?; w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string()) }
 fn desktop_toggle_main(app: tauri::AppHandle) { if let Some(w)=app.get_webview_window("main") { if w.is_visible().unwrap_or(false) {let _=w.hide();} else {let _=w.show();let _=w.set_focus();} } }
 
-fn show_quick(app: &tauri::AppHandle) {
-    if let Some(w)=app.get_webview_window("quick") { let _=w.emit("quick-list-updated", app.state::<Arc<AppState>>().snapshot.lock().map(|s|s.clone()).unwrap_or_default()); let _=w.emit("quick-list-opened", ()); let _=w.show();let _=w.set_focus();return; }
-    if let Ok(w)=WebviewWindowBuilder::new(app,"quick",WebviewUrl::App("quick.html".into())).title("c-send クイック選択").inner_size(420.0,520.0).resizable(false).always_on_top(true).center().build() {
-        let state=app.state::<Arc<AppState>>().snapshot.lock().map(|s|s.clone()).unwrap_or_default();let _=w.emit("quick-list-updated",state);let _=w.emit("quick-list-opened",());
+fn make_tray_menu(app: &tauri::AppHandle, include_items: bool) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    let menu = Menu::new(app)?;
+    if include_items {
+        let state = app.state::<Arc<AppState>>();
+        let snapshot = state.snapshot.lock().unwrap();
+        let generation = state.generation.load(Ordering::SeqCst);
+        if snapshot.items.is_empty() { menu.append(&MenuItem::with_id(app,"empty","項目がありません",false,None::<&str>)?)?; }
+        for (index,item) in snapshot.items.iter().enumerate() {
+            let title = item.title.replace('&', "&&").replace(['\r','\n'], " ");
+            menu.append(&MenuItem::with_id(app,format!("item:{generation}:{index}"),if title.is_empty(){"(名称なし)"}else{&title},true,None::<&str>)?)?;
+        }
+        #[cfg(target_os="linux")]
+        menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
+    if !include_items || cfg!(target_os="linux") {
+        for (id,title) in [("show","通常画面を表示"),("top","常に手前に表示を切替"),("update","更新を確認"),("quit","終了")] {
+            menu.append(&MenuItem::with_id(app,id,title,true,None::<&str>)?)?;
+        }
+    }
+    Ok(menu)
+}
+fn show_quick(app: &tauri::AppHandle) {
+    if let (Ok(menu),Some(window))=(make_tray_menu(app,true),app.get_webview_window("main")) { let _ = window.popup_menu(&menu); }
 }
 fn main() {
     let state=Arc::new(AppState::default());
@@ -109,7 +124,7 @@ fn main() {
             if shortcut == &toggle && event.state() == ShortcutState::Pressed { desktop_toggle_main(app.clone()); }
         }).build())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![desktop_get_info,desktop_publish_quick_list,desktop_respond_template,desktop_select_item,desktop_get_quick_list,desktop_set_always_on_top,desktop_show_main])
+        .invoke_handler(tauri::generate_handler![desktop_get_info,desktop_publish_quick_list,desktop_respond_template,desktop_set_always_on_top])
         .setup(move |app| {
             // The main window and tray must still work if another app owns this shortcut.
             let _ = app.global_shortcut().register(visibility_shortcut);
@@ -117,16 +132,10 @@ fn main() {
             let _=main.set_always_on_top(saved_always_on_top(app.handle()));
             {
                 let icon=tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
-                let menu=tauri::menu::Menu::with_items(app,&[
-                    &tauri::menu::MenuItem::with_id(app,"show","通常画面を表示",true,None::<&str>)?,
-                    &tauri::menu::MenuItem::with_id(app,"quick","クイック選択",true,None::<&str>)?,
-                    &tauri::menu::MenuItem::with_id(app,"top","常に手前に表示を切替",true,None::<&str>)?,
-                    &tauri::menu::MenuItem::with_id(app,"update","更新を確認",true,None::<&str>)?,
-                    &tauri::menu::MenuItem::with_id(app,"quit","終了",true,None::<&str>)?])?;
-                tauri::tray::TrayIconBuilder::new().icon(icon).menu(&menu).show_menu_on_left_click(false)
+                let menu=make_tray_menu(app.handle(),cfg!(target_os="linux"))?;
+                tauri::tray::TrayIconBuilder::with_id("main-tray").icon(icon).menu(&menu).show_menu_on_left_click(false)
                     .on_menu_event(move |app,event| match event.id().as_ref(){
                         "show"=>{let _=show_main(app);},
-                        "quick"=>show_quick(app),
                         "top"=>if let Some(w)=app.get_webview_window("main"){let current=w.is_always_on_top().unwrap_or(false);let _=apply_always_on_top(!current,app);},
                         "update"=>{let handle=app.clone();tauri::async_runtime::spawn(async move {
                             if let Ok(updater)=handle.updater(){match updater.check().await {
@@ -136,10 +145,20 @@ fn main() {
                                 Err(_)=>{handle.dialog().message("更新を確認できませんでした。ネットワーク接続を確認してください。").title("更新確認").kind(MessageDialogKind::Error).blocking_show();}
                             }}
                         });},
-                        "quit"=>{let yes=app.dialog().message("c-sendを終了しますか？").title("終了の確認").kind(MessageDialogKind::Warning).buttons(MessageDialogButtons::YesNo).blocking_show();if yes{app.exit(0);}},_=>{}})
+                        "quit"=>{let yes=app.dialog().message("c-sendを終了しますか？").title("終了の確認").kind(MessageDialogKind::Warning).buttons(MessageDialogButtons::YesNo).blocking_show();if yes{app.exit(0);}},id=>{
+                            let mut parts=id.split(':');
+                            if parts.next()==Some("item") { if let (Some(Ok(generation)),Some(Ok(index)))=(parts.next().map(str::parse::<u64>),parts.next().map(str::parse::<usize>)) {
+                                let state=app.state::<Arc<AppState>>();
+                                let item=state.snapshot.lock().ok().and_then(|s| if state.generation.load(Ordering::SeqCst)==generation {s.items.get(index).cloned()} else {None});
+                                if let Some(item)=item {let app=app.clone(); tauri::async_runtime::spawn(async move {if let Err(error)=select_item(item,generation,app.clone()).await {app.dialog().message(error).title("コピーできませんでした").kind(MessageDialogKind::Error).show(|_|{});}});}
+                            }}
+                        }})
                     .on_tray_icon_event(|tray,event| match event {
-                        tauri::tray::TrayIconEvent::Click{button:tauri::tray::MouseButton::Left,button_state:tauri::tray::MouseButtonState::Up,..}=>show_quick(tray.app_handle()),
-                        tauri::tray::TrayIconEvent::DoubleClick{button:tauri::tray::MouseButton::Left,..}=>{let _=show_main(tray.app_handle());},
+                        tauri::tray::TrayIconEvent::Click{button:tauri::tray::MouseButton::Left,button_state:tauri::tray::MouseButtonState::Up,..}=>{let app=tray.app_handle().clone();let state=app.state::<Arc<AppState>>();if state.last_double_click.lock().ok().and_then(|time|*time).map(|time|time.elapsed()<Duration::from_millis(500)).unwrap_or(false) {return;}
+                            #[cfg(target_os="macos")]
+                            {let mut last=state.last_click.lock().unwrap();if last.map(|time|time.elapsed()<Duration::from_millis(500)).unwrap_or(false) {*last=None;state.clicks.fetch_add(1,Ordering::SeqCst);let _=show_main(&app);return;}*last=Some(Instant::now());}
+                            let token=state.clicks.fetch_add(1,Ordering::SeqCst)+1;drop(state);tauri::async_runtime::spawn(async move {tokio::time::sleep(Duration::from_millis(500)).await;if app.state::<Arc<AppState>>().clicks.load(Ordering::SeqCst)==token {show_quick(&app);}});},
+                        tauri::tray::TrayIconEvent::DoubleClick{button:tauri::tray::MouseButton::Left,..}=>{let state=tray.app_handle().state::<Arc<AppState>>();state.clicks.fetch_add(1,Ordering::SeqCst);if let Ok(mut time)=state.last_double_click.lock(){*time=Some(Instant::now());}let _=show_main(tray.app_handle());},
                         _=>{}
                     })
                     .build(app)?;

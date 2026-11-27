@@ -58,7 +58,7 @@ jobs:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: c-send ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
-            Desktop wrapper release. Fixes a startup failure in v0.0.1. PWA API v1, PWA 0.2.1.
+            Desktop wrapper release. Show quick selection items directly in the tray menu. PWA API v1, PWA 0.2.1.
             macOS builds are not notarized; macOS may show a download warning.
           releaseDraft: true
           prerelease: false
