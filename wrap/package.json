@@ -1,0 +1,14 @@
+{
+  "name": "c-send-desktop-wrapper",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "build": "tauri build",
+    "dev": "tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.4"
+  }
+}

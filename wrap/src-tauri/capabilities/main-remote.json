@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-remote",
+  "description": "Official c-send PWA permissions",
+  "windows": ["main"],
+  "remote": { "urls": ["https://narusue.github.io/c-send.pwa", "https://narusue.github.io/c-send.pwa/*"] },
+  "permissions": ["core:default", "core:event:default", "core:window:default"]
+}

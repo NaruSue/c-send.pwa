@@ -1,0 +1,67 @@
+name: Build and publish desktop wrapper
+
+on:
+  push:
+    tags: ["wrap-v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing wrap-v* tag to build
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: --target x86_64-pc-windows-msvc
+          - platform: macos-latest
+            args: --target aarch64-apple-darwin
+          - platform: macos-13
+            args: --target x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            args: --target x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+      - name: Install JS dependencies
+        working-directory: wrap
+        run: npm install
+      - name: Prepare app icons
+        shell: bash
+        run: |
+          mkdir -p wrap/src-tauri/icons
+          cp icon-192.png wrap/src-tauri/icons/tray.png
+      - name: Generate bundle icons
+        working-directory: wrap
+        run: npx tauri icon ../icon-512.png
+      - name: Build and upload release assets
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: wrap
+          tagName: ${{ github.event.inputs.tag || github.ref_name }}
+          releaseName: c-send ${{ github.event.inputs.tag || github.ref_name }}
+          releaseBody: |
+            Desktop wrapper release. PWA API v1, PWA 0.2.1.
+            macOS builds are not notarized; macOS may show a download warning.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
