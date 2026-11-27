@@ -1,6 +1,6 @@
 [package]
 name = "c-send"
-version = "0.0.3"
+version = "0.0.4"
 description = "c-send desktop wrapper"
 authors = ["c-send"]
 edition = "2021"

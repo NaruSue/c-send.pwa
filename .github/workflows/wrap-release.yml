@@ -47,6 +47,9 @@ jobs:
       - name: Generate bundle icons
         working-directory: wrap
         run: npx tauri icon ../icon-512.png
+      - name: Check wrapper API payloads
+        working-directory: wrap/src-tauri
+        run: cargo test
       - name: Build and upload release assets
         uses: tauri-apps/tauri-action@v0
         env:
@@ -58,23 +61,55 @@ jobs:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: c-send ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
-            Desktop wrapper release. Show quick selection items directly in the tray menu. PWA API v1, PWA 0.2.1.
+            Desktop wrapper release. Fix tray list communication, always-on-top check state, and window position and size persistence. PWA API v1, PWA 0.2.1.
             macOS builds are not notarized; macOS may show a download warning.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-      - name: Smoke test Windows app startup
+      - name: Check Windows window state after forced exit
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $exe = Resolve-Path "wrap/src-tauri/target/x86_64-pc-windows-msvc/release/c-send.exe"
-          $process = Start-Process -FilePath $exe -PassThru
-          Start-Sleep -Seconds 10
-          $process.Refresh()
-          if ($process.HasExited) {
-            throw "c-send exited during startup with code $($process.ExitCode)"
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class WindowCheck {
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
           }
-          Stop-Process -Id $process.Id
+          '@
+          function Wait-ForWindow($process) {
+            for ($i = 0; $i -lt 40; $i++) {
+              Start-Sleep -Milliseconds 500
+              $process.Refresh()
+              if ($process.HasExited) { throw "c-send exited during startup: $($process.ExitCode)" }
+              if ($process.MainWindowHandle -ne [IntPtr]::Zero) { return $process.MainWindowHandle }
+            }
+            throw 'c-send window did not appear'
+          }
+          $exe = (Resolve-Path 'wrap/src-tauri/target/x86_64-pc-windows-msvc/release/c-send.exe').Path
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            $window = Wait-ForWindow $process
+            if (-not [WindowCheck]::SetWindowPos($window, [IntPtr]::Zero, 120, 100, 800, 600, 0x0014)) { throw 'Could not move and resize window' }
+            Start-Sleep -Seconds 3
+            $before = New-Object WindowCheck+RECT
+            if (-not [WindowCheck]::GetWindowRect($window, [ref]$before)) { throw 'Could not read initial window rectangle' }
+            Stop-Process -Id $process.Id -Force
+            $process.WaitForExit()
+            Start-Sleep -Seconds 3
+            $process = Start-Process -FilePath $exe -PassThru
+            $window = Wait-ForWindow $process
+            Start-Sleep -Seconds 3
+            $after = New-Object WindowCheck+RECT
+            if (-not [WindowCheck]::GetWindowRect($window, [ref]$after)) { throw 'Could not read restored window rectangle' }
+            foreach ($field in @('Left','Top','Right','Bottom')) {
+              if ([Math]::Abs($before.$field - $after.$field) -gt 5) { throw "Window $field did not persist: $($before.$field) -> $($after.$field)" }
+            }
+          } finally {
+            if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
 
   publish:
     needs: release

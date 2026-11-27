@@ -7,6 +7,7 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_window_state::{AppHandleExt, StateFlags};
 
 const PWA_URL: &str = "https://narusue.github.io/c-send.pwa/";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -15,9 +16,22 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[serde(rename_all = "camelCase")]
 struct Item { id: String, title: String, value: String, mode: String, #[serde(default)] tags: Vec<String>, #[serde(default)] source: String }
 #[derive(Clone, Deserialize, Serialize, Default)]
-struct Snapshot { #[serde(default)] api_version: u32, #[serde(default)] items: Vec<Item> }
+#[serde(rename_all = "camelCase")]
+struct Snapshot { api_version: u32, #[serde(default)] items: Vec<Item> }
 #[derive(Default)]
-struct AppState { snapshot: Mutex<Snapshot>, generation: AtomicU64, clicks: AtomicU64, last_click: Mutex<Option<Instant>>, last_double_click: Mutex<Option<Instant>>, pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Result<String,String>>>> }
+struct AppState { snapshot: Mutex<Snapshot>, generation: AtomicU64, clicks: AtomicU64, window_save_generation: AtomicU64, last_click: Mutex<Option<Instant>>, last_double_click: Mutex<Option<Instant>>, top_menu: Mutex<Option<tauri::menu::CheckMenuItem<tauri::Wry>>>, tray_menu: Mutex<Option<tauri::menu::Menu<tauri::Wry>>>, pending: Mutex<HashMap<String, tokio::sync::oneshot::Sender<Result<String,String>>>> }
+
+fn window_state_flags() -> StateFlags { StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED }
+
+fn schedule_window_state_save(app: tauri::AppHandle) {
+    let generation = app.state::<Arc<AppState>>().window_save_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(700)).await;
+        if app.state::<Arc<AppState>>().window_save_generation.load(Ordering::SeqCst) == generation {
+            if let Err(error) = app.save_window_state(window_state_flags()) { eprintln!("Failed to save window state: {error}"); }
+        }
+    });
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,7 +56,7 @@ fn desktop_publish_quick_list(snapshot: Snapshot, state: State<'_, Arc<AppState>
     let clean = Snapshot { api_version: 1, items: snapshot.items.into_iter().take(20).collect() };
     { let mut current = state.snapshot.lock().map_err(|e|e.to_string())?; *current = clean; state.generation.fetch_add(1, Ordering::SeqCst); }
     #[cfg(target_os="linux")]
-    if let Some(tray) = app.tray_by_id("main-tray") { if let Ok(menu) = make_tray_menu(&app, true) { let _ = tray.set_menu(Some(menu)); } }
+    refresh_linux_menu(&app).map_err(|e|e.to_string())?;
     #[cfg(not(target_os="linux"))]
     let _ = app;
     Ok(())
@@ -80,6 +94,7 @@ fn desktop_set_always_on_top(enabled: bool, app: tauri::AppHandle, webview: Webv
 }
 fn apply_always_on_top(enabled: bool, app: &tauri::AppHandle) -> Result<(),String> {
     app.get_webview_window("main").ok_or("main window missing")?.set_always_on_top(enabled).map_err(|e|e.to_string())?;
+    if let Some(item) = app.state::<Arc<AppState>>().top_menu.lock().map_err(|e|e.to_string())?.as_ref() { item.set_checked(enabled).map_err(|e|e.to_string())?; }
     let path = settings_path(app)?;
     fs::create_dir_all(path.parent().ok_or("settings path missing parent")?).map_err(|e|e.to_string())?;
     fs::write(path, serde_json::json!({"alwaysOnTop":enabled}).to_string()).map_err(|e|e.to_string())
@@ -89,9 +104,8 @@ fn saved_always_on_top(app: &tauri::AppHandle) -> bool { settings_path(app).ok()
 fn show_main(app: &tauri::AppHandle) -> Result<(),String> { let w=app.get_webview_window("main").ok_or("main window missing")?; w.show().map_err(|e|e.to_string())?;w.set_focus().map_err(|e|e.to_string()) }
 fn desktop_toggle_main(app: tauri::AppHandle) { if let Some(w)=app.get_webview_window("main") { if w.is_visible().unwrap_or(false) {let _=w.hide();} else {let _=w.show();let _=w.set_focus();} } }
 
-fn make_tray_menu(app: &tauri::AppHandle, include_items: bool) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
-    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
-    let menu = Menu::new(app)?;
+fn populate_tray_menu(app: &tauri::AppHandle, menu: &tauri::menu::Menu<tauri::Wry>, include_items: bool) -> tauri::Result<()> {
+    use tauri::menu::{MenuItem, PredefinedMenuItem};
     if include_items {
         let state = app.state::<Arc<AppState>>();
         let snapshot = state.snapshot.lock().unwrap();
@@ -105,11 +119,43 @@ fn make_tray_menu(app: &tauri::AppHandle, include_items: bool) -> tauri::Result<
         menu.append(&PredefinedMenuItem::separator(app)?)?;
     }
     if !include_items || cfg!(target_os="linux") {
-        for (id,title) in [("show","通常画面を表示"),("top","常に手前に表示を切替"),("update","更新を確認"),("quit","終了")] {
+        for (id,title) in [("show","通常画面を表示"),("top","常に手前に表示"),("update","更新を確認"),("quit","終了")] {
+            if id == "top" { if let Some(item)=app.state::<Arc<AppState>>().top_menu.lock().unwrap().as_ref() { menu.append(item)?; } continue; }
             menu.append(&MenuItem::with_id(app,id,title,true,None::<&str>)?)?;
         }
     }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Snapshot;
+
+    #[test]
+    fn pwa_quick_list_payload_uses_camel_case_api_version() {
+        let snapshot: Snapshot = serde_json::from_str(r#"{"apiVersion":1,"items":[{"id":"item-1","title":"表示中","value":"本文","mode":"plain","tags":["note.com"],"source":"local"}]}"#).unwrap();
+        assert_eq!(snapshot.api_version, 1);
+        assert_eq!(snapshot.items.len(), 1);
+        assert_eq!(snapshot.items[0].title, "表示中");
+        assert_eq!(snapshot.items[0].value, "本文");
+    }
+
+    #[test]
+    fn quick_list_payload_without_api_version_is_rejected() {
+        assert!(serde_json::from_str::<Snapshot>(r#"{"items":[]}"#).is_err());
+    }
+}
+fn make_tray_menu(app: &tauri::AppHandle, include_items: bool) -> tauri::Result<tauri::menu::Menu<tauri::Wry>> {
+    let menu = tauri::menu::Menu::new(app)?;
+    populate_tray_menu(app, &menu, include_items)?;
     Ok(menu)
+}
+#[cfg(target_os="linux")]
+fn refresh_linux_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
+    let state=app.state::<Arc<AppState>>();
+    let menu=state.tray_menu.lock().unwrap().clone();
+    if let Some(menu)=menu { for item in menu.items()? { menu.remove(&item)?; } populate_tray_menu(app,&menu,true)?; }
+    Ok(())
 }
 fn show_quick(app: &tauri::AppHandle) {
     if let (Ok(menu),Some(window))=(make_tray_menu(app,true),app.get_webview_window("main")) { let _ = window.popup_menu(&menu); }
@@ -118,7 +164,7 @@ fn main() {
     let state=Arc::new(AppState::default());
     let visibility_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
     tauri::Builder::default().manage(state)
-        .plugin(tauri_plugin_clipboard_manager::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_clipboard_manager::init()).plugin(tauri_plugin_dialog::init()).plugin(tauri_plugin_window_state::Builder::default().with_state_flags(window_state_flags()).build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
             let toggle = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
             if shortcut == &toggle && event.state() == ShortcutState::Pressed { desktop_toggle_main(app.clone()); }
@@ -131,8 +177,11 @@ fn main() {
             let main=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(640.0,480.0).build()?;
             let _=main.set_always_on_top(saved_always_on_top(app.handle()));
             {
+                let check=tauri::menu::CheckMenuItem::with_id(app,"top","常に手前に表示",true,main.is_always_on_top().unwrap_or(false),None::<&str>)?;
+                *app.state::<Arc<AppState>>().top_menu.lock().unwrap()=Some(check);
                 let icon=tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
                 let menu=make_tray_menu(app.handle(),cfg!(target_os="linux"))?;
+                *app.state::<Arc<AppState>>().tray_menu.lock().unwrap()=Some(menu.clone());
                 tauri::tray::TrayIconBuilder::with_id("main-tray").icon(icon).menu(&menu).show_menu_on_left_click(false)
                     .on_menu_event(move |app,event| match event.id().as_ref(){
                         "show"=>{let _=show_main(app);},
@@ -140,7 +189,7 @@ fn main() {
                         "update"=>{let handle=app.clone();tauri::async_runtime::spawn(async move {
                             if let Ok(updater)=handle.updater(){match updater.check().await {
                                 Ok(Some(update))=>{let version=update.version.clone();let yes=handle.dialog().message(format!("c-send {version} をダウンロードして更新しますか？")).title("更新があります").kind(MessageDialogKind::Info).buttons(MessageDialogButtons::YesNo).blocking_show();
-                                    if yes {if update.download_and_install(|_,_|{},||{}).await.is_ok(){handle.restart();}else{handle.dialog().message("更新に失敗しました。後でもう一度お試しください。").title("更新できませんでした").kind(MessageDialogKind::Error).blocking_show();}}},
+                                    if yes {if handle.save_window_state(window_state_flags()).is_err(){handle.dialog().message("ウィンドウの位置とサイズを保存できませんでした。更新を中止します。").title("更新できませんでした").kind(MessageDialogKind::Error).blocking_show();}else if update.download_and_install(|_,_|{},||{}).await.is_ok(){handle.restart();}else{handle.dialog().message("更新に失敗しました。後でもう一度お試しください。").title("更新できませんでした").kind(MessageDialogKind::Error).blocking_show();}}},
                                 Ok(None)=>{handle.dialog().message("最新バージョンを使用しています。").title("更新確認").kind(MessageDialogKind::Info).blocking_show();},
                                 Err(_)=>{handle.dialog().message("更新を確認できませんでした。ネットワーク接続を確認してください。").title("更新確認").kind(MessageDialogKind::Error).blocking_show();}
                             }}
@@ -165,6 +214,10 @@ fn main() {
           }
             Ok(())
         })
-        .on_window_event(|window,event| if window.label()=="main" { if let tauri::WindowEvent::CloseRequested{api,..}=event {api.prevent_close();let _=window.hide();} })
+        .on_window_event(|window,event| if window.label()=="main" { match event {
+            tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_) => schedule_window_state_save(window.app_handle().clone()),
+            tauri::WindowEvent::CloseRequested{api,..} => {api.prevent_close();let _=window.hide();},
+            _ => {}
+        } })
         .run(tauri::generate_context!()).expect("failed to run c-send");
 }
