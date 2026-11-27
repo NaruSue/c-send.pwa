@@ -11,6 +11,7 @@ Tauri 2ラッパー v0.0.1を実装中です。PWA連携API v1はPWA 0.2.1で公
 - ラッパーのソース、PWAからラッパーを制御するAPI、そのAPIを使うPWA側コードは、同じ `c-send.pwa` リポジトリで管理する。
 - デスクトップアプリはTauri 2を使う。
 - 対象OSはWindows、macOS、Linux。LinuxはUbuntu 22.04 LTSをビルド基準とし、22.04/24.04 LTSで確認する。配布形式はAppImageとdeb。
+- macOS初版の配布対象はApple Silicon（arm64）。Intel Macは対象外。
 - モバイルOSのキーボード機能はこのデスクトップラッパーの対象外とし、既存の `wrap/key/` 構想で別に扱う。
 
 ## ウィンドウ
