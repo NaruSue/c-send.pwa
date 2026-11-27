@@ -2,7 +2,7 @@
 
 ## 状態
 
-APIバージョンは`1`。PWA側ブリッジはPWA 0.2.1としてGitHub Pagesへ公開済み。Tauri側は`wrap-v0.0.2`。
+APIバージョンは`1`。PWA側ブリッジはPWA 0.2.1としてGitHub Pagesへ公開済み。Tauri側は`wrap-v0.0.3`。
 
 ## 担当範囲
 
