@@ -2,7 +2,7 @@
 
 ## 状態
 
-Tauri 2ラッパー v0.0.1を[GitHub Releases](https://github.com/NaruSue/c-send.pwa/releases/tag/wrap-v0.0.1)で公開しました。PWA連携API v1はPWA 0.2.1に対応します。Windows x64、macOS Apple Silicon、Ubuntu 22.04 x64向けの配布物を掲載しています。詳細は[連携API仕様](api-contract.md)を参照してください。
+Tauri 2ラッパー v0.0.2を[GitHub Releases](https://github.com/NaruSue/c-send.pwa/releases/tag/wrap-v0.0.2)で公開しました。PWA連携API v1はPWA 0.2.1に対応します。Windows x64、macOS Apple Silicon、Ubuntu 22.04 x64向けの配布物を掲載しています。v0.0.1で起動できない場合はv0.0.2を上書きインストールしてください。詳細は[連携API仕様](api-contract.md)を参照してください。
 
 ## 目的と構成
 

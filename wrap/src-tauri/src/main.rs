@@ -111,7 +111,8 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![desktop_get_info,desktop_publish_quick_list,desktop_respond_template,desktop_select_item,desktop_get_quick_list,desktop_set_always_on_top,desktop_show_main])
         .setup(move |app| {
-            app.global_shortcut().register(visibility_shortcut)?;
+            // The main window and tray must still work if another app owns this shortcut.
+            let _ = app.global_shortcut().register(visibility_shortcut);
             let main=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(640.0,480.0).build()?;
             let _=main.set_always_on_top(saved_always_on_top(app.handle()));
             {

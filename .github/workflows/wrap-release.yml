@@ -58,8 +58,30 @@ jobs:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: c-send ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
-            Desktop wrapper release. PWA API v1, PWA 0.2.1.
+            Desktop wrapper release. Fixes a startup failure in v0.0.1. PWA API v1, PWA 0.2.1.
             macOS builds are not notarized; macOS may show a download warning.
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+      - name: Smoke test Windows app startup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path "wrap/src-tauri/target/x86_64-pc-windows-msvc/release/c-send.exe"
+          $process = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 10
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "c-send exited during startup with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id
+
+  publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release after all builds and smoke checks pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
