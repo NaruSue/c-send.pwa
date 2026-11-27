@@ -28,4 +28,4 @@ await listen("quick-list-updated", event => { items = event.payload?.items || []
 await listen("quick-list-opened", () => { searchEl.value = ""; statusEl.textContent = ""; render(); searchEl.focus(); });
 searchEl.addEventListener("input", render);
 document.querySelector("#open").addEventListener("click", () => invoke("desktop_show_main"));
-items = await invoke("desktop_get_quick_list"); render();
+items = await invoke("desktop_get_quick_list"); render(); searchEl.focus();

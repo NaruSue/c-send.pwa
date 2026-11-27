@@ -6,7 +6,7 @@
   "build": {
     "beforeBuildCommand": "",
     "beforeDevCommand": "",
-    "frontendDist": "..",
+    "frontendDist": "../ui",
     "devUrl": "https://narusue.github.io/c-send.pwa/"
   },
   "app": {
