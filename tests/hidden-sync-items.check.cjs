@@ -20,7 +20,7 @@ const news = JSON.parse(fs.readFileSync(path.join(root, 'news.json'), 'utf8'));
       window.__desktopCalls = [];
       window.__desktopListeners = {};
       window.__TAURI__ = {
-        core: { invoke: async (command, args) => { window.__desktopCalls.push({ command, args }); if (command === 'desktop_get_info') return { wrapperVersion: '0.0.1', apiVersion: 1, os: 'windows', capabilities: [] }; } },
+        core: { invoke: async (command, args) => { window.__desktopCalls.push({ command, args }); if (command === 'desktop_publish_quick_list' && window.__desktopFail) throw new Error('送信テスト失敗'); if (command === 'desktop_get_info') return { wrapperVersion: '0.0.1', apiVersion: 1, os: 'windows', capabilities: [] }; } },
         event: { listen: async (name, callback) => { window.__desktopListeners[name] = callback; return () => delete window.__desktopListeners[name]; } }
       };
     });
@@ -54,6 +54,11 @@ const news = JSON.parse(fs.readFileSync(path.join(root, 'news.json'), 'utf8'));
     });
     await page.reload();
     await page.waitForFunction(() => window.__desktopCalls.some(call => call.command === 'desktop_publish_quick_list' && call.args.snapshot.items.some(item => item.id === 'site:visible-1')));
+    await page.evaluate(() => { window.__desktopFail = true; });
+    await page.locator('#search').fill('表示中');
+    await page.waitForFunction(() => document.querySelector('#status').textContent.includes('送信テスト失敗'));
+    await page.evaluate(() => { window.__desktopFail = false; });
+    await page.locator('#search').fill('');
     const expanded = await page.evaluate(async () => {
       await window.__desktopListeners['c-send-template-resolve']({ payload: { requestId: 'resolve-visible-1', itemId: 'site:visible-1', context: { clipboardText: 'tray clipboard' } } });
       return window.__desktopCalls.find(call => call.command === 'desktop_respond_template' && call.args.requestId === 'resolve-visible-1')?.args;

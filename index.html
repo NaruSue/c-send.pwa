@@ -619,11 +619,29 @@
       if(sourceFilter){const chip=document.createElement('button');chip.type='button';chip.className='tag-chip';chip.textContent=sourceName(sourceFilter)+' ×';chip.setAttribute('aria-label','保存先・参照元の絞り込みを解除');chip.onclick=()=>{sourceFilter='';render()};ui.selectedTags.prepend(chip)}
       const visible=all.filter(i=>(!sourceFilter||itemSource(i)===sourceFilter)&&matchesQuery(i)&&state.tags.every(t=>i.tags.includes(t))).sort((a,b)=>String(b.lastUsedAt||'').localeCompare(String(a.lastUsedAt||'')));
       currentQuickItems=new Map(visible.slice(0,20).map(item=>[String(item.id),item]));
-      CsendDesktop.publishQuickList({items:[...currentQuickItems.values()].map(item=>({id:String(item.id),title:item.name,value:item.value,mode:item.mode,tags:item.tags,source:sourceName(itemSource(item))}))}).catch(()=>{});
+      publishDesktopQuickList([...currentQuickItems.values()].map(item=>({id:String(item.id),title:item.name,value:item.value,mode:item.mode,tags:item.tags,source:sourceName(itemSource(item))})));
       ui.list.querySelectorAll('.item').forEach((card,index)=>{const item=visible[index];if(!item)return;const source=itemSource(item),color=sourceOptions().find(s=>s.id===source)?.color||'#557fa8';card.style.borderLeft='4px solid '+color;card.style.background='#fff';card.querySelectorAll('.sample-ref-tag').forEach(n=>n.remove());card.title=sourceName(source)+(item.syncPending?' · 保存待ち':'');card.setAttribute('aria-label',item.name+' · '+sourceName(source))});
       $('searchClear').hidden=!(state.query||state.tags.length||sourceFilter);saveFilters();renderSyncFooter();
     };
     let currentQuickItems=new Map();
+    let desktopQuickListRevision=0,desktopQuickListPending=Promise.resolve(),desktopQuickListLastError="";
+    function publishDesktopQuickList(items){
+      if(!CsendDesktop.available)return;
+      const revision=++desktopQuickListRevision;
+      desktopQuickListPending=desktopQuickListPending.catch(()=>{}).then(async()=>{
+        if(revision!==desktopQuickListRevision)return;
+        await CsendDesktop.publishQuickList({items});
+        const info=await CsendDesktop.getInfo();
+        if(revision!==desktopQuickListRevision)return;
+        if(Number.isInteger(info?.quickListCount)&&info.quickListCount!==items.length)throw new Error(`一覧の件数が一致しません（画面 ${items.length}件、アプリ ${info.quickListCount}件）`);
+        desktopQuickListLastError="";
+      }).catch(error=>{
+        if(revision!==desktopQuickListRevision)return;
+        const message=String(error?.message||error||"不明なエラー").slice(0,160);
+        recordDiagnostic("desktop_quick_list_failed",message);
+        if(message!==desktopQuickListLastError){desktopQuickListLastError=message;notify("トレイの一覧を更新できませんでした："+message,true)}
+      });
+    }
     CsendDesktop.onTemplateResolve(async request=>{
       const item=typeof request?.itemId==="string"?currentQuickItems.get(request.itemId):null;
       if(!request?.requestId||!item||item.mode!=="template"){try{await CsendDesktop.respondTemplate(request?.requestId||"",request?.itemId||"",{error:true})}catch{}return}
