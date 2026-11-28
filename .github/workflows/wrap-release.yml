@@ -92,10 +92,16 @@ jobs:
           $process = Start-Process -FilePath $exe -PassThru
           try {
             $window = Wait-ForWindow $process
+            Start-Sleep -Seconds 8
             if (-not [WindowCheck]::SetWindowPos($window, [IntPtr]::Zero, 120, 100, 800, 600, 0x0014)) { throw 'Could not move and resize window' }
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 5
             $before = New-Object WindowCheck+RECT
             if (-not [WindowCheck]::GetWindowRect($window, [ref]$before)) { throw 'Could not read initial window rectangle' }
+            $statePath = Join-Path $env:APPDATA 'org.c-send.desktop/.window-state.json'
+            if (-not (Test-Path -LiteralPath $statePath)) { throw "Window state file was not saved: $statePath" }
+            $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+            Write-Host "Saved window state: $($state.main | ConvertTo-Json -Compress)"
+            if (-not $state.main -or [Math]::Abs($state.main.x - $before.Left) -gt 16 -or [Math]::Abs($state.main.y - $before.Top) -gt 16) { throw 'Saved window state does not match the moved window' }
             Stop-Process -Id $process.Id -Force
             $process.WaitForExit()
             Start-Sleep -Seconds 3
