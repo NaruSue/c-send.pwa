@@ -46,6 +46,7 @@ const news = JSON.parse(fs.readFileSync(path.join(root, 'news.json'), 'utf8'));
     });
     await page.goto('https://loose.bz/c-send/pwa/');
     await page.waitForFunction(() => document.querySelector('#appVersion').style.visibility === 'visible');
+    assert.equal(await page.locator('#installTrigger').isVisible(), false, 'PWA install button must be hidden in the desktop wrapper');
     await page.evaluate(async () => {
       const db = await new Promise(resolve => { const r = indexedDB.open('csend-web-local', 3); r.onsuccess = () => resolve(r.result); });
       await new Promise((resolve, reject) => { const tx = db.transaction('auth', 'readwrite'); tx.objectStore('auth').put({ id: 'https://loose.bz', userId: 'hidden-sync-ci-user', accessToken: 'test', accessExpiresAt: Date.now() + 3600000, refreshToken: 'test', pwaAutoSyncEnabled: true }); tx.oncomplete = resolve; tx.onerror = () => reject(tx.error); });

@@ -1,6 +1,6 @@
 [package]
 name = "c-send"
-version = "0.0.4"
+version = "0.0.5"
 description = "c-send desktop wrapper"
 authors = ["c-send"]
 edition = "2021"
@@ -20,3 +20,6 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4"] }
 tokio = { version = "1", features = ["time", "sync"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }

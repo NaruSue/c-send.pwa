@@ -8,6 +8,8 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+#[cfg(windows)]
+mod system_menu;
 
 const PWA_URL: &str = "https://narusue.github.io/c-send.pwa/";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -35,7 +37,7 @@ fn schedule_window_state_save(app: tauri::AppHandle) {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct WrapperInfo { wrapper_version: &'static str, api_version: u32, os: &'static str, capabilities: Vec<&'static str> }
+struct WrapperInfo { wrapper_version: &'static str, api_version: u32, os: &'static str, quick_list_count: usize, capabilities: Vec<&'static str> }
 
 fn require_main(webview: &Webview) -> Result<(),String> {
     let url=webview.url().map_err(|e|e.to_string())?;
@@ -43,10 +45,11 @@ fn require_main(webview: &Webview) -> Result<(),String> {
 }
 
 #[tauri::command]
-fn desktop_get_info(webview: Webview) -> Result<WrapperInfo,String> {
+fn desktop_get_info(webview: Webview, state: State<'_, Arc<AppState>>) -> Result<WrapperInfo,String> {
     require_main(&webview)?;
     Ok(WrapperInfo { wrapper_version: VERSION, api_version: 1,
         os: if cfg!(target_os="windows") { "windows" } else if cfg!(target_os="macos") { "macos" } else { "linux" },
+        quick_list_count: state.snapshot.lock().map_err(|e|e.to_string())?.items.len(),
         capabilities: vec!["quick-select", "clipboard-text", "template-resolve", "always-on-top", "diagnostic-log", "tray"] })
 }
 #[tauri::command]
@@ -160,6 +163,16 @@ fn refresh_linux_menu(app: &tauri::AppHandle) -> tauri::Result<()> {
 fn show_quick(app: &tauri::AppHandle) {
     if let (Ok(menu),Some(window))=(make_tray_menu(app,true),app.get_webview_window("main")) { let _ = window.popup_menu(&menu); }
 }
+fn check_for_updates(handle: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        if let Ok(updater)=handle.updater(){match updater.check().await {
+            Ok(Some(update))=>{let version=update.version.clone();let yes=handle.dialog().message(format!("c-send {version} をダウンロードして更新しますか？")).title("更新があります").kind(MessageDialogKind::Info).buttons(MessageDialogButtons::YesNo).blocking_show();
+                if yes {if handle.save_window_state(window_state_flags()).is_err(){handle.dialog().message("ウィンドウの位置とサイズを保存できませんでした。更新を中止します。").title("更新できませんでした").kind(MessageDialogKind::Error).blocking_show();}else if update.download_and_install(|_,_|{},||{}).await.is_ok(){handle.restart();}else{handle.dialog().message("更新に失敗しました。後でもう一度お試しください。").title("更新できませんでした").kind(MessageDialogKind::Error).blocking_show();}}},
+            Ok(None)=>{handle.dialog().message("最新バージョンを使用しています。").title("更新確認").kind(MessageDialogKind::Info).blocking_show();},
+            Err(_)=>{handle.dialog().message("更新を確認できませんでした。ネットワーク接続を確認してください。").title("更新確認").kind(MessageDialogKind::Error).blocking_show();}
+        }}
+    });
+}
 fn main() {
     let state=Arc::new(AppState::default());
     let visibility_shortcut = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
@@ -174,8 +187,10 @@ fn main() {
         .setup(move |app| {
             // The main window and tray must still work if another app owns this shortcut.
             let _ = app.global_shortcut().register(visibility_shortcut);
-            let main=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(640.0,480.0).build()?;
+            let main=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(320.0,320.0).build()?;
             let _=main.set_always_on_top(saved_always_on_top(app.handle()));
+            #[cfg(windows)]
+            system_menu::install(&main)?;
             {
                 let check=tauri::menu::CheckMenuItem::with_id(app,"top","常に手前に表示",true,main.is_always_on_top().unwrap_or(false),None::<&str>)?;
                 *app.state::<Arc<AppState>>().top_menu.lock().unwrap()=Some(check);
@@ -186,14 +201,7 @@ fn main() {
                     .on_menu_event(move |app,event| match event.id().as_ref(){
                         "show"=>{let _=show_main(app);},
                         "top"=>if let Some(w)=app.get_webview_window("main"){let current=w.is_always_on_top().unwrap_or(false);let _=apply_always_on_top(!current,app);},
-                        "update"=>{let handle=app.clone();tauri::async_runtime::spawn(async move {
-                            if let Ok(updater)=handle.updater(){match updater.check().await {
-                                Ok(Some(update))=>{let version=update.version.clone();let yes=handle.dialog().message(format!("c-send {version} をダウンロードして更新しますか？")).title("更新があります").kind(MessageDialogKind::Info).buttons(MessageDialogButtons::YesNo).blocking_show();
-                                    if yes {if handle.save_window_state(window_state_flags()).is_err(){handle.dialog().message("ウィンドウの位置とサイズを保存できませんでした。更新を中止します。").title("更新できませんでした").kind(MessageDialogKind::Error).blocking_show();}else if update.download_and_install(|_,_|{},||{}).await.is_ok(){handle.restart();}else{handle.dialog().message("更新に失敗しました。後でもう一度お試しください。").title("更新できませんでした").kind(MessageDialogKind::Error).blocking_show();}}},
-                                Ok(None)=>{handle.dialog().message("最新バージョンを使用しています。").title("更新確認").kind(MessageDialogKind::Info).blocking_show();},
-                                Err(_)=>{handle.dialog().message("更新を確認できませんでした。ネットワーク接続を確認してください。").title("更新確認").kind(MessageDialogKind::Error).blocking_show();}
-                            }}
-                        });},
+                        "update"=>check_for_updates(app.clone()),
                         "quit"=>{let yes=app.dialog().message("c-sendを終了しますか？").title("終了の確認").kind(MessageDialogKind::Warning).buttons(MessageDialogButtons::YesNo).blocking_show();if yes{app.exit(0);}},id=>{
                             let mut parts=id.split(':');
                             if parts.next()==Some("item") { if let (Some(Ok(generation)),Some(Ok(index)))=(parts.next().map(str::parse::<u64>),parts.next().map(str::parse::<usize>)) {

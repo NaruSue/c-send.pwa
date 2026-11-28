@@ -61,11 +61,28 @@ jobs:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: c-send ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
-            Desktop wrapper release. Fix tray list communication, always-on-top check state, and window position and size persistence. PWA API v1, PWA 0.2.1.
+            Desktop wrapper release. Fix remote PWA communication and add window menu controls. PWA API v1, PWA 0.2.2.
             macOS builds are not notarized; macOS may show a download warning.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+      - name: Install PWA test dependencies on Windows
+        if: runner.os == 'Windows'
+        run: npm ci
+      - name: Check real remote PWA to wrapper bridge
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19232'
+          $exe = (Resolve-Path 'wrap/src-tauri/target/x86_64-pc-windows-msvc/release/c-send.exe').Path
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            node tests/wrap-real-bridge.cjs
+            if ($LASTEXITCODE -ne 0) { throw 'Real PWA bridge test failed' }
+          } finally {
+            if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+            Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
+          }
       - name: Check Windows window state after forced exit
         if: runner.os == 'Windows'
         shell: pwsh
@@ -73,10 +90,13 @@ jobs:
           Add-Type @'
           using System;
           using System.Runtime.InteropServices;
+          using System.Text;
           public static class WindowCheck {
             [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
             [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
             [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+            [DllImport("user32.dll")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool revert);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder text, int max, uint flags);
           }
           '@
           function Wait-ForWindow($process) {
@@ -93,10 +113,17 @@ jobs:
           try {
             $window = Wait-ForWindow $process
             Start-Sleep -Seconds 8
-            if (-not [WindowCheck]::SetWindowPos($window, [IntPtr]::Zero, 120, 100, 800, 600, 0x0014)) { throw 'Could not move and resize window' }
+            $menu = [WindowCheck]::GetSystemMenu($window, $false)
+            foreach ($entry in @(@(0x1100,'常に手前に表示'),@(0x1110,'アプリの更新を確認'),@(0x1120,'c-send wrap v0.0.5'))) {
+              $text = [System.Text.StringBuilder]::new(128)
+              [void][WindowCheck]::GetMenuStringW($menu, $entry[0], $text, $text.Capacity, 0)
+              if ($text.ToString() -ne $entry[1]) { throw "Missing system menu item: $($entry[1])" }
+            }
+            if (-not [WindowCheck]::SetWindowPos($window, [IntPtr]::Zero, 120, 100, 360, 600, 0x0014)) { throw 'Could not move and resize window' }
             Start-Sleep -Seconds 5
             $before = New-Object WindowCheck+RECT
             if (-not [WindowCheck]::GetWindowRect($window, [ref]$before)) { throw 'Could not read initial window rectangle' }
+            if (($before.Right - $before.Left) -gt 400) { throw 'Window cannot be resized to the requested narrow width' }
             $statePath = Join-Path $env:APPDATA 'org.c-send.desktop/.window-state.json'
             if (-not (Test-Path -LiteralPath $statePath)) { throw "Window state file was not saved: $statePath" }
             $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json

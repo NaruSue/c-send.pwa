@@ -4,5 +4,5 @@
   "description": "Official c-send PWA permissions",
   "windows": ["main"],
   "remote": { "urls": ["https://narusue.github.io/c-send.pwa", "https://narusue.github.io/c-send.pwa/*"] },
-  "permissions": ["core:default", "core:event:default", "core:window:default"]
+  "permissions": ["core:event:default", "allow-desktop-get-info", "allow-desktop-publish-quick-list", "allow-desktop-respond-template", "allow-desktop-set-always-on-top"]
 }

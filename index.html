@@ -46,7 +46,7 @@
     button:focus-visible,input:focus-visible,textarea:focus-visible{outline-color:#a99df4}input[type=radio]{accent-color:var(--brand)}.update-mode label{display:flex;align-items:center;gap:8px}.update-mode input[type=radio]{width:auto;margin:0;flex:none}
     .app{border-color:#e8e2f3;background:linear-gradient(45deg,#e7faff 0%,#f8f5ff 48%,#fff4bd 100%);box-shadow:0 18px 48px rgba(87,67,150,.12)}
     header{background:linear-gradient(115deg,#fff 35%,#fff9e5 100%)}
-    .icon-button,.install-trigger{background:#f1edff;color:#6651cf;box-shadow:inset 0 0 0 1px #7057dc20}
+    .icon-button,.install-trigger{background:#f1edff;color:#6651cf;box-shadow:inset 0 0 0 1px #7057dc20}.install-trigger[hidden]{display:none!important}
     .add-button,.primary{background:linear-gradient(120deg,#7057dc,#9b68e8 58%,#f08091);box-shadow:0 8px 20px rgba(112,87,220,.27)}
     .search-box{border-color:#e4ddf3;box-shadow:0 3px 12px rgba(87,67,150,.05)}.search-box:focus-within{outline-color:#a99df4}
     .tag-chip{background:#f0ecff;color:#6551c9}.tag-chip[aria-pressed=true]{background:#7057dc;color:#fff;box-shadow:0 4px 12px rgba(112,87,220,.2)}
@@ -476,7 +476,7 @@
     function closeCopyPreview(){ui.copyPreview.classList.remove("open");ui.copyPreview.setAttribute("aria-hidden","true")}
     ui.copyPreview.addEventListener("click",closeCopyPreview);document.addEventListener("keydown",event=>{if(event.key==="Escape")closeCopyPreview()});
     const sampleSyncInterval=10*60*1000;function syncStaleSources(){const now=Date.now();if(!state.sampleSyncedAt||now-Date.parse(state.sampleSyncedAt)>=sampleSyncInterval)syncSample(true);const stale=state.references.some(entry=>!entry.lastCheckedAt||now-Date.parse(entry.lastCheckedAt)>=sampleSyncInterval);if(stale)syncReferences("",true);if(navigator.onLine)syncServerTemplates(true)}document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")syncStaleSources()});document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")applyPendingUpdate()});window.addEventListener("online",()=>syncServerTemplates(true));setInterval(()=>{syncStaleSources();refreshNews(true);applyPendingUpdate()},sampleSyncInterval);
-    const standalone=window.matchMedia("(display-mode: standalone)").matches||window.navigator.standalone===true;const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);if(standalone)ui.installTrigger.hidden=true;ui.iosSteps.classList.toggle("hidden",!isIOS);
+    const standalone=window.matchMedia("(display-mode: standalone)").matches||window.navigator.standalone===true;const isIOS=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);if(standalone||CsendDesktop.available)ui.installTrigger.hidden=true;ui.iosSteps.classList.toggle("hidden",!isIOS);
     window.addEventListener("beforeinstallprompt",event=>{event.preventDefault();deferredInstallPrompt=event;ui.installAction.classList.remove("hidden");ui.iosSteps.classList.add("hidden")});
     window.addEventListener("appinstalled",()=>{deferredInstallPrompt=null;ui.installPopover.hidden=true;ui.installTrigger.hidden=true;notify("c-sendをインストールしました")});
     const openInstallHelp=()=>{ui.installPopover.hidden=false};ui.installTrigger.onclick=openInstallHelp;$("installCloseButton").onclick=()=>{ui.installPopover.hidden=true};
