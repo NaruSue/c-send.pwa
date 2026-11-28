@@ -23,6 +23,17 @@ jobs:
         shell: pwsh
         run: |
           $env:CSEND_CI_BRIDGE_CHECK = '1'
+          $env:CSEND_CI_TRAY_SHOW = '1'
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          using System.Text;
+          public static class TrayMenuCheck {
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowW(string cls, string title);
+            [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr window, uint msg, IntPtr wparam, IntPtr lparam);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder text, int max, uint flags);
+          }
+          '@
           $exe = (Resolve-Path 'wrap/src-tauri/target/debug/c-send.exe').Path
           $process = Start-Process -FilePath $exe -PassThru
           try {
@@ -35,6 +46,17 @@ jobs:
               if ($process.MainWindowTitle -eq 'CSEND_CI_BRIDGE_PASS') { $passed = $true; break }
             }
             if (-not $passed) { throw "Bridge check timed out: $($process.MainWindowTitle)" }
+            $found = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              Start-Sleep -Milliseconds 500
+              $popup = [TrayMenuCheck]::FindWindowW('#32768', $null)
+              if ($popup -eq [IntPtr]::Zero) { continue }
+              $menu = [TrayMenuCheck]::SendMessageW($popup, 0x1e1, [IntPtr]::Zero, [IntPtr]::Zero)
+              $text = [System.Text.StringBuilder]::new(256)
+              [void][TrayMenuCheck]::GetMenuStringW($menu, 0, $text, $text.Capacity, 0x400)
+              if ($text.ToString() -eq '実画面の連携確認') { $found = $true; break }
+            }
+            if (-not $found) { throw "Tray popup did not show the PWA item: $($text.ToString())" }
           } finally {
             if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force }
           }

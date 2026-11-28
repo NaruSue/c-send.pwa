@@ -45,11 +45,23 @@ fn require_main(webview: &Webview) -> Result<(),String> {
 }
 
 #[tauri::command]
-fn desktop_get_info(webview: Webview, state: State<'_, Arc<AppState>>) -> Result<WrapperInfo,String> {
+fn desktop_get_info(webview: Webview, state: State<'_, Arc<AppState>>, app: tauri::AppHandle) -> Result<WrapperInfo,String> {
     require_main(&webview)?;
+    let quick_list_count = state.snapshot.lock().map_err(|e|e.to_string())?.items.len();
+    #[cfg(debug_assertions)]
+    if std::env::var_os("CSEND_CI_TRAY_SHOW").is_some() && quick_list_count == 1 {
+        use std::sync::atomic::AtomicBool;
+        static SHOWN: AtomicBool = AtomicBool::new(false);
+        if !SHOWN.swap(true, Ordering::SeqCst) {
+            let handle=app.clone();
+            tauri::async_runtime::spawn(async move { tokio::time::sleep(Duration::from_secs(2)).await; show_quick(&handle); });
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    let _ = app;
     Ok(WrapperInfo { wrapper_version: VERSION, api_version: 1,
         os: if cfg!(target_os="windows") { "windows" } else if cfg!(target_os="macos") { "macos" } else { "linux" },
-        quick_list_count: state.snapshot.lock().map_err(|e|e.to_string())?.items.len(),
+        quick_list_count,
         capabilities: vec!["quick-select", "clipboard-text", "template-resolve", "always-on-top", "diagnostic-log", "tray"] })
 }
 #[tauri::command]
