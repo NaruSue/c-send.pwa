@@ -5,6 +5,9 @@ description = "c-send desktop wrapper"
 authors = ["c-send"]
 edition = "2021"
 
+[features]
+ci-bridge-check = []
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

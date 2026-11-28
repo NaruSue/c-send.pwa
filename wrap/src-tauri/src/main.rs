@@ -48,7 +48,7 @@ fn require_main(webview: &Webview) -> Result<(),String> {
 fn desktop_get_info(webview: Webview, state: State<'_, Arc<AppState>>, app: tauri::AppHandle) -> Result<WrapperInfo,String> {
     require_main(&webview)?;
     let quick_list_count = state.snapshot.lock().map_err(|e|e.to_string())?.items.len();
-    #[cfg(debug_assertions)]
+    #[cfg(any(debug_assertions, feature="ci-bridge-check"))]
     if std::env::var_os("CSEND_CI_TRAY_SHOW").is_some() && quick_list_count == 1 {
         use std::sync::atomic::AtomicBool;
         static SHOWN: AtomicBool = AtomicBool::new(false);
@@ -57,7 +57,7 @@ fn desktop_get_info(webview: Webview, state: State<'_, Arc<AppState>>, app: taur
             tauri::async_runtime::spawn(async move { tokio::time::sleep(Duration::from_secs(2)).await; show_quick(&handle); });
         }
     }
-    #[cfg(not(debug_assertions))]
+    #[cfg(not(any(debug_assertions, feature="ci-bridge-check")))]
     let _ = app;
     Ok(WrapperInfo { wrapper_version: VERSION, api_version: 1,
         os: if cfg!(target_os="windows") { "windows" } else if cfg!(target_os="macos") { "macos" } else { "linux" },
@@ -200,7 +200,7 @@ fn main() {
             // The main window and tray must still work if another app owns this shortcut.
             let _ = app.global_shortcut().register(visibility_shortcut);
             let builder=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(320.0,320.0);
-            #[cfg(debug_assertions)]
+            #[cfg(any(debug_assertions, feature="ci-bridge-check"))]
             let builder=builder.on_page_load(|window,payload| {
                 if std::env::var_os("CSEND_CI_BRIDGE_CHECK").is_some() && matches!(payload.event(),tauri::webview::PageLoadEvent::Finished) {
                     let _=window.eval(r#"(async()=>{try{for(let i=0;i<60&&(!window.CsendDesktop?.available||document.querySelector('#appVersion')?.style.visibility!=='visible');i++)await new Promise(r=>setTimeout(r,1000));const api=window.CsendDesktop;if(!api?.available)throw Error('bridge unavailable');if(getComputedStyle(document.querySelector('#installTrigger')).display!=='none')throw Error('install button visible');const before=await api.getInfo();if(before.wrapperVersion!=='0.0.5')throw Error('version mismatch');document.querySelector('#newButton').click();await new Promise(r=>setTimeout(r,1000));document.querySelector('#name').value='実画面の連携確認';document.querySelector('#value').value='test text';document.querySelector('#itemTags').value='連携確認';document.querySelector('#saveButton').click();for(let i=0;i<20&&!document.querySelector('.item-title')?.textContent.includes('実画面の連携確認');i++)await new Promise(r=>setTimeout(r,500));if(!document.querySelector('.item-title')?.textContent.includes('実画面の連携確認'))throw Error('item not rendered');document.querySelector('[data-tag=連携確認]')?.click();let after;for(let i=0;i<20;i++){after=await api.getInfo();if(after.quickListCount===1)break;await new Promise(r=>setTimeout(r,500))}if(after.quickListCount!==1)throw Error('render list not received: '+after.quickListCount);await window.__TAURI__.window.getCurrentWindow().setTitle('CSEND_CI_BRIDGE_PASS')}catch(e){try{await window.__TAURI__.window.getCurrentWindow().setTitle('CSEND_CI_BRIDGE_FAIL: '+String(e))}catch{document.title='CSEND_CI_BRIDGE_FAIL'}}})()"#);

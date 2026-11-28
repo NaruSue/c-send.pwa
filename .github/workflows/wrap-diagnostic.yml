@@ -18,7 +18,7 @@ jobs:
       - working-directory: wrap
         run: npx tauri icon ../icon-512.png
       - working-directory: wrap/src-tauri
-        run: cargo build
+        run: cargo build --release --features ci-bridge-check
       - name: Check actual PWA item rendering and publication
         shell: pwsh
         run: |
@@ -34,7 +34,7 @@ jobs:
             [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder text, int max, uint flags);
           }
           '@
-          $exe = (Resolve-Path 'wrap/src-tauri/target/debug/c-send.exe').Path
+          $exe = (Resolve-Path 'wrap/src-tauri/target/release/c-send.exe').Path
           $process = Start-Process -FilePath $exe -PassThru
           try {
             $passed = $false
