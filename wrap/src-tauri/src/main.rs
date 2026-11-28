@@ -41,7 +41,7 @@ struct WrapperInfo { wrapper_version: &'static str, api_version: u32, os: &'stat
 
 fn require_main(webview: &Webview) -> Result<(),String> {
     let url=webview.url().map_err(|e|e.to_string())?;
-    if webview.label()=="main" && url.scheme()=="https" && url.host_str()==Some("narusue.github.io") && url.path().starts_with("/c-send.pwa") { Ok(()) } else { Err("command unavailable in this webview".into()) }
+    if webview.label()=="main" && url.scheme()=="https" && url.host_str()==Some("narusue.github.io") && (url.path()=="/c-send.pwa" || url.path().starts_with("/c-send.pwa/")) { Ok(()) } else { Err("command unavailable in this webview".into()) }
 }
 
 #[tauri::command]
@@ -199,7 +199,8 @@ fn main() {
         .setup(move |app| {
             // The main window and tray must still work if another app owns this shortcut.
             let _ = app.global_shortcut().register(visibility_shortcut);
-            let builder=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(320.0,320.0);
+            let builder=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(320.0,320.0)
+                .on_navigation(|url| url.host_str()!=Some("narusue.github.io") || (url.scheme()=="https" && (url.path()=="/c-send.pwa" || url.path().starts_with("/c-send.pwa/"))));
             #[cfg(any(debug_assertions, feature="ci-bridge-check"))]
             let builder=builder.on_page_load(|window,payload| {
                 if std::env::var_os("CSEND_CI_BRIDGE_CHECK").is_some() && matches!(payload.event(),tauri::webview::PageLoadEvent::Finished) {
