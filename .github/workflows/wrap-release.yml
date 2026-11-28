@@ -66,22 +66,30 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
-      - name: Install PWA test dependencies on Windows
+      - name: Build Windows bridge check
         if: runner.os == 'Windows'
-        run: npm ci
+        working-directory: wrap/src-tauri
+        run: cargo build --target x86_64-pc-windows-msvc
       - name: Check real remote PWA to wrapper bridge
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=19232'
-          $exe = (Resolve-Path 'wrap/src-tauri/target/x86_64-pc-windows-msvc/release/c-send.exe').Path
+          $env:CSEND_CI_BRIDGE_CHECK = '1'
+          $exe = (Resolve-Path 'wrap/src-tauri/target/x86_64-pc-windows-msvc/debug/c-send.exe').Path
           $process = Start-Process -FilePath $exe -PassThru
           try {
-            node tests/wrap-real-bridge.cjs
-            if ($LASTEXITCODE -ne 0) { throw 'Real PWA bridge test failed' }
+            $passed = $false
+            for ($i = 0; $i -lt 120; $i++) {
+              Start-Sleep -Seconds 1
+              $process.Refresh()
+              if ($process.HasExited) { throw "Bridge check exited: $($process.ExitCode)" }
+              if ($process.MainWindowTitle -like 'CSEND_CI_BRIDGE_FAIL*') { throw $process.MainWindowTitle }
+              if ($process.MainWindowTitle -eq 'CSEND_CI_BRIDGE_PASS') { $passed = $true; break }
+            }
+            if (-not $passed) { throw "Bridge check timed out: $($process.MainWindowTitle)" }
           } finally {
             if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force }
-            Remove-Item Env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS -ErrorAction SilentlyContinue
+            Remove-Item Env:CSEND_CI_BRIDGE_CHECK -ErrorAction SilentlyContinue
           }
       - name: Check Windows window state after forced exit
         if: runner.os == 'Windows'
@@ -97,6 +105,8 @@ jobs:
             [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
             [DllImport("user32.dll")] public static extern IntPtr GetSystemMenu(IntPtr hWnd, bool revert);
             [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder text, int max, uint flags);
+            [DllImport("user32.dll")] public static extern bool PostMessageW(IntPtr window, uint message, IntPtr wparam, IntPtr lparam);
+            [DllImport("user32.dll")] public static extern IntPtr GetWindowLongPtrW(IntPtr window, int index);
           }
           '@
           function Wait-ForWindow($process) {
@@ -119,6 +129,13 @@ jobs:
               [void][WindowCheck]::GetMenuStringW($menu, $entry[0], $text, $text.Capacity, 0)
               if ($text.ToString() -ne $entry[1]) { throw "Missing system menu item: $($entry[1])" }
             }
+            $topBefore = [WindowCheck]::GetWindowLongPtrW($window, -20).ToInt64() -band 8
+            [void][WindowCheck]::PostMessageW($window, 0x112, [IntPtr]0x1100, [IntPtr]::Zero)
+            Start-Sleep -Seconds 2
+            $topAfter = [WindowCheck]::GetWindowLongPtrW($window, -20).ToInt64() -band 8
+            if ($topBefore -eq $topAfter) { throw 'Always-on-top menu did not change window state' }
+            [void][WindowCheck]::PostMessageW($window, 0x112, [IntPtr]0x1100, [IntPtr]::Zero)
+            Start-Sleep -Seconds 2
             if (-not [WindowCheck]::SetWindowPos($window, [IntPtr]::Zero, 120, 100, 360, 600, 0x0014)) { throw 'Could not move and resize window' }
             Start-Sleep -Seconds 5
             $before = New-Object WindowCheck+RECT

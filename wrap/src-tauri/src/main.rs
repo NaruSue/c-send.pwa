@@ -187,7 +187,14 @@ fn main() {
         .setup(move |app| {
             // The main window and tray must still work if another app owns this shortcut.
             let _ = app.global_shortcut().register(visibility_shortcut);
-            let main=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(320.0,320.0).build()?;
+            let builder=WebviewWindowBuilder::new(app,"main",WebviewUrl::External(PWA_URL.parse().unwrap())).title("c-send").inner_size(1000.0,760.0).min_inner_size(320.0,320.0);
+            #[cfg(debug_assertions)]
+            let builder=builder.on_page_load(|window,payload| {
+                if std::env::var_os("CSEND_CI_BRIDGE_CHECK").is_some() && matches!(payload.event(),tauri::webview::PageLoadEvent::Finished) {
+                    let _=window.eval(r#"(async()=>{try{for(let i=0;i<60&&(!window.CsendDesktop?.available||document.querySelector('#appVersion')?.style.visibility!=='visible');i++)await new Promise(r=>setTimeout(r,1000));const api=window.CsendDesktop;if(!api?.available)throw Error('bridge unavailable');if(getComputedStyle(document.querySelector('#installTrigger')).display!=='none')throw Error('install button visible');const before=await api.getInfo();if(before.wrapperVersion!=='0.0.5')throw Error('version mismatch');await api.publishQuickList({items:[{id:'ci-real-bridge',title:'実機連携の確認',value:'test text',mode:'plain',tags:[],source:'local'}]});const after=await api.getInfo();if(after.quickListCount!==1)throw Error('list not received');await window.__TAURI__.window.getCurrentWindow().setTitle('CSEND_CI_BRIDGE_PASS')}catch(e){try{await window.__TAURI__.window.getCurrentWindow().setTitle('CSEND_CI_BRIDGE_FAIL: '+String(e))}catch{document.title='CSEND_CI_BRIDGE_FAIL'}}})()"#);
+                }
+            });
+            let main=builder.build()?;
             let _=main.set_always_on_top(saved_always_on_top(app.handle()));
             #[cfg(windows)]
             system_menu::install(&main)?;
