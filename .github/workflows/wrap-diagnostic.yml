@@ -18,7 +18,7 @@ jobs:
       - working-directory: wrap
         run: npx tauri icon ../icon-512.png
       - working-directory: wrap/src-tauri
-        run: cargo build --release --features ci-bridge-check
+        run: cargo build --release --features ci-bridge-check,tauri/custom-protocol
       - name: Check actual PWA item rendering and publication
         shell: pwsh
         run: |

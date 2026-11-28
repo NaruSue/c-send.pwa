@@ -61,7 +61,7 @@ jobs:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: c-send ${{ github.event.inputs.tag || github.ref_name }}
           releaseBody: |
-            Desktop wrapper release. Fix remote PWA communication and add window menu controls. PWA API v1, PWA 0.2.2.
+            Desktop wrapper release. Fix remote PWA communication and add window menu controls. PWA API v1, PWA 0.2.3.
             macOS builds are not notarized; macOS may show a download warning.
           releaseDraft: true
           prerelease: false
@@ -69,13 +69,24 @@ jobs:
       - name: Build Windows bridge check
         if: runner.os == 'Windows'
         working-directory: wrap/src-tauri
-        run: cargo build --target x86_64-pc-windows-msvc
+        run: cargo build --release --features ci-bridge-check,tauri/custom-protocol --target x86_64-pc-windows-msvc --target-dir ../../target-ci
       - name: Check real remote PWA to wrapper bridge
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $env:CSEND_CI_BRIDGE_CHECK = '1'
-          $exe = (Resolve-Path 'wrap/src-tauri/target/x86_64-pc-windows-msvc/debug/c-send.exe').Path
+          $env:CSEND_CI_TRAY_SHOW = '1'
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          using System.Text;
+          public static class TrayMenuCheck {
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowW(string cls, string title);
+            [DllImport("user32.dll")] public static extern IntPtr SendMessageW(IntPtr window, uint msg, IntPtr wparam, IntPtr lparam);
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetMenuStringW(IntPtr menu, uint item, StringBuilder text, int max, uint flags);
+          }
+          '@
+          $exe = (Resolve-Path 'target-ci/x86_64-pc-windows-msvc/release/c-send.exe').Path
           $process = Start-Process -FilePath $exe -PassThru
           try {
             $passed = $false
@@ -87,9 +98,21 @@ jobs:
               if ($process.MainWindowTitle -eq 'CSEND_CI_BRIDGE_PASS') { $passed = $true; break }
             }
             if (-not $passed) { throw "Bridge check timed out: $($process.MainWindowTitle)" }
+            $found = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              Start-Sleep -Milliseconds 500
+              $popup = [TrayMenuCheck]::FindWindowW('#32768', $null)
+              if ($popup -eq [IntPtr]::Zero) { continue }
+              $menu = [TrayMenuCheck]::SendMessageW($popup, 0x1e1, [IntPtr]::Zero, [IntPtr]::Zero)
+              $text = [System.Text.StringBuilder]::new(256)
+              [void][TrayMenuCheck]::GetMenuStringW($menu, 0, $text, $text.Capacity, 0x400)
+              if ($text.ToString() -eq '実画面の連携確認') { $found = $true; break }
+            }
+            if (-not $found) { throw 'Tray popup did not show the PWA item' }
           } finally {
             if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force }
             Remove-Item Env:CSEND_CI_BRIDGE_CHECK -ErrorAction SilentlyContinue
+            Remove-Item Env:CSEND_CI_TRAY_SHOW -ErrorAction SilentlyContinue
           }
       - name: Check Windows window state after forced exit
         if: runner.os == 'Windows'
@@ -124,7 +147,7 @@ jobs:
             $window = Wait-ForWindow $process
             Start-Sleep -Seconds 8
             $menu = [WindowCheck]::GetSystemMenu($window, $false)
-            foreach ($entry in @(@(0x1100,'常に手前に表示'),@(0x1110,'アプリの更新を確認'),@(0x1120,'c-send wrap v0.0.5'))) {
+            foreach ($entry in @(@(0x1100,'常に手前に表示'),@(0x1110,'アプリの更新を確認'),@(0x1120,'c-send wrap v0.0.6'))) {
               $text = [System.Text.StringBuilder]::new(128)
               [void][WindowCheck]::GetMenuStringW($menu, $entry[0], $text, $text.Capacity, 0)
               if ($text.ToString() -ne $entry[1]) { throw "Missing system menu item: $($entry[1])" }
