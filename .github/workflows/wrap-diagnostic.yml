@@ -1,0 +1,40 @@
+name: Diagnose Windows PWA tray list
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - working-directory: wrap
+        run: npm install
+      - shell: pwsh
+        run: Copy-Item icon-192.png wrap/src-tauri/icons/tray.png
+      - working-directory: wrap
+        run: npx tauri icon ../icon-512.png
+      - working-directory: wrap/src-tauri
+        run: cargo build
+      - name: Check actual PWA item rendering and publication
+        shell: pwsh
+        run: |
+          $env:CSEND_CI_BRIDGE_CHECK = '1'
+          $exe = (Resolve-Path 'wrap/src-tauri/target/debug/c-send.exe').Path
+          $process = Start-Process -FilePath $exe -PassThru
+          try {
+            $passed = $false
+            for ($i = 0; $i -lt 150; $i++) {
+              Start-Sleep -Seconds 1
+              $process.Refresh()
+              if ($process.HasExited) { throw "Bridge check exited: $($process.ExitCode)" }
+              if ($process.MainWindowTitle -like 'CSEND_CI_BRIDGE_FAIL*') { throw $process.MainWindowTitle }
+              if ($process.MainWindowTitle -eq 'CSEND_CI_BRIDGE_PASS') { $passed = $true; break }
+            }
+            if (-not $passed) { throw "Bridge check timed out: $($process.MainWindowTitle)" }
+          } finally {
+            if ($process -and -not $process.HasExited) { Stop-Process -Id $process.Id -Force }
+          }
