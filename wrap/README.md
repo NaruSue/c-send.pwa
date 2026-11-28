@@ -2,7 +2,7 @@
 
 ## 状態
 
-Tauri 2ラッパー v0.0.5を[GitHub Releases](https://github.com/NaruSue/c-send.pwa/releases/tag/wrap-v0.0.5)で公開しました。PWA連携API v1とPWA 0.2.3に対応します。Windows x64、macOS Apple Silicon、Ubuntu 22.04 x64向けの配布物を掲載しています。v0.0.1で起動できない場合は最新版を上書きインストールしてください。詳細は[連携API仕様](api-contract.md)を参照してください。
+Tauri 2ラッパー v0.0.6を[GitHub Releases](https://github.com/NaruSue/c-send.pwa/releases/tag/wrap-v0.0.6)で公開しました。PWA連携API v1とPWA 0.2.3に対応します。Windows x64、macOS Apple Silicon、Ubuntu 22.04 x64向けの配布物を掲載しています。v0.0.1で起動できない場合は最新版を上書きインストールしてください。詳細は[連携API仕様](api-contract.md)を参照してください。
 
 ## 目的と構成
 
@@ -94,7 +94,7 @@ APIは同一リポジトリ内で契約を定義し、PWAとラッパーを別�
 - Tauri側は`withGlobalTauri`または同等の公開ブリッジでTauri 2の`core.invoke`と`event.listen`を利用できるようにし、API仕様にあるコマンド・イベントを実装する。
 - ネイティブ機能を呼ぶPWA連携APIは、ブラウザー版では利用できない場合も通常のPWA機能が動くよう、機能検出して使う。通常画面のコピーはPWAが行い、ラッパーのクリップボード操作はクイック選択での項目選択に限定する。
 - ネイティブAPIは表示・非表示、最前面切替、必要なウィンドウ操作などに限定する。
-- リモートPWAからネイティブAPIを呼べる範囲は正式PWAの信頼済みURLに限定し、Tauri capabilityも必要最小限にする。任意サイトの遷移先へネイティブ権限を渡さない。
+- WindowsのIPCはサイトのオリジンを権限判定に使うため、capabilityには正式PWAのオリジンを許可する。ラッパーはメイン画面のURLも検査し、同じオリジン上のPWA以外への遷移を防ぐ。許可するコマンドは必要最小限にする。
 - PWAとラッパーを別々にリリースできるよう、PWA側の連携APIはバージョン互換性を保ち、未対応APIがある古いラッパーでも通常のPWA利用を妨げない。
 - 対応表はPWAの版、ラッパーの版、連携APIの版、確認したOSを記録し、PWAとラッパー双方のリリースノートから参照できるようにする。
 
